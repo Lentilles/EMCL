@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>SPODES version 4 object definitions and local handlers for EMCL.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EMCL.Core/EMCL.Core.csproj" />
+    <ProjectReference Include="../EMCL.Objects/EMCL.Objects.csproj" />
+  </ItemGroup>
+</Project>

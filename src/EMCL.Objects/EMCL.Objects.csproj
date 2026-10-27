@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>COSEM object catalogs, Association LN import, and local operation handlers.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EMCL.Core/EMCL.Core.csproj" />
+    <ProjectReference Include="../EMCL.Protocol/EMCL.Protocol.csproj" />
+  </ItemGroup>
+</Project>

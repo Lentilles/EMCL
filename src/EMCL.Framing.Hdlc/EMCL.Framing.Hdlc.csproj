@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>DLMS HDLC frame, checksum, segmentation, and LLC codecs.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EMCL.Core/EMCL.Core.csproj" />
+  </ItemGroup>
+</Project>

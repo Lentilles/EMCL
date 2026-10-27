@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Incremental A-XDR, xDLMS, and ACSE codecs independent of transport framing.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EMCL.Core/EMCL.Core.csproj" />
+  </ItemGroup>
+</Project>

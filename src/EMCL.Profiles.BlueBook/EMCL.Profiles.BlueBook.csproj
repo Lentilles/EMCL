@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Blue Book Edition 16 object definitions and local handlers for EMCL.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EMCL.Core/EMCL.Core.csproj" />
+    <ProjectReference Include="../EMCL.Objects/EMCL.Objects.csproj" />
+  </ItemGroup>
+</Project>

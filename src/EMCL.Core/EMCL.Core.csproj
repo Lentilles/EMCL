@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Universal COSEM values, versioned descriptors, and extension contracts.</Description>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Transport-independent Logical Name client sessions for DLMS/COSEM.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../EMCL.Core/EMCL.Core.csproj" />
+    <ProjectReference Include="../EMCL.Protocol/EMCL.Protocol.csproj" />
+    <ProjectReference Include="../EMCL.Objects/EMCL.Objects.csproj" />
+    <ProjectReference Include="../EMCL.Transport/EMCL.Transport.csproj" />
+  </ItemGroup>
+</Project>

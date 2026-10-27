@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EMCL/EMCL.csproj" />
+    <Project Path="src/EMCL.Core/EMCL.Core.csproj" />
+    <Project Path="src/EMCL.Client/EMCL.Client.csproj" />
+    <Project Path="src/EMCL.Framing.Hdlc/EMCL.Framing.Hdlc.csproj" />
+    <Project Path="src/EMCL.Framing.Wrapper/EMCL.Framing.Wrapper.csproj" />
+    <Project Path="src/EMCL.Objects/EMCL.Objects.csproj" />
+    <Project Path="src/EMCL.Profiles.BlueBook/EMCL.Profiles.BlueBook.csproj" />
+    <Project Path="src/EMCL.Profiles.Spodes/EMCL.Profiles.Spodes.csproj" />
+    <Project Path="src/EMCL.Protocol/EMCL.Protocol.csproj" />
+    <Project Path="src/EMCL.Transport/EMCL.Transport.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EMCL.Tests/EMCL.Tests.csproj" />
+  </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/EMCL.Examples/EMCL.Examples.csproj" />
+  </Folder>
+</Solution>
