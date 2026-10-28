@@ -3,3 +3,7 @@ obj/
 /packages/
 riderModule.iml
 /_ReSharper.Caches/
+
+# Local meter configuration and generated association exports.
+/examples/EMCL.Examples/meter.local.json
+/examples/EMCL.Examples/association.json

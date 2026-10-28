@@ -5,5 +5,12 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/EMCL/EMCL.csproj" />
+    <None Update="meter.example.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="meter.local.json" CopyToOutputDirectory="PreserveNewest"
+          Condition="Exists('$(MSBuildProjectDirectory)/meter.local.json')" />
   </ItemGroup>
+  <Target Name="RemoveMissingLocalMeterConfiguration" AfterTargets="Build"
+          Condition="!Exists('$(MSBuildProjectDirectory)/meter.local.json')">
+    <Delete Files="$(TargetDir)meter.local.json" />
+  </Target>
 </Project>

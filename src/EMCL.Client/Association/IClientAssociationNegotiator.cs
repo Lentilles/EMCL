@@ -3,7 +3,7 @@ using EMCL.Protocol.Acse;
 namespace EMCL.Client.Association;
 
 /// <summary>Customizes ACSE fields and association-context validation without owning transport I/O.</summary>
-/// <remarks>Implementations must not report authentication or protection that they have not verified. The session supports one AARQ/AARE and one RLRQ/RLRE exchange; a multi-step HLS handshake requires another session implementation.</remarks>
+/// <remarks>Implementations must not report authentication or protection that they have not verified. A negotiator can implement <see cref="IClientHighLevelAuthenticator"/> for an additional ACTION challenge exchange.</remarks>
 public interface IClientAssociationNegotiator
 {
     /// <summary>Creates the association request for the supplied proposal.</summary>

@@ -8,6 +8,8 @@ public sealed record LnAssociationOptions
 {
     /// <summary>The default advertised maximum receive PDU length.</summary>
     public const ushort DefaultMaxReceivePduSize = 1024;
+    /// <summary>The required secret length in octets for the built-in AES high-level mechanism.</summary>
+    public const int HighSecretLength = 16;
     /// <summary>The conformance subset implemented by the built-in client.</summary>
     public const DlmsConformance SupportedConformance = DlmsConformance.Get | DlmsConformance.Set
         | DlmsConformance.Action | DlmsConformance.SelectiveAccess | DlmsConformance.BlockTransferWithGet
@@ -22,7 +24,7 @@ public sealed record LnAssociationOptions
     {
         get; init;
     }
-    /// <summary>Gets immutable low-level authentication octets; they are never added to diagnostics.</summary>
+    /// <summary>Gets immutable authentication secret octets; they are never added to diagnostics.</summary>
     public ImmutableArray<byte> Password { get; init; } = [];
 
     internal void Validate()
@@ -39,12 +41,25 @@ public sealed record LnAssociationOptions
 
         if (!Enum.IsDefined(Authentication))
         {
-            throw new NotSupportedException("HLS and protected associations require a separate implementation.");
+            throw new NotSupportedException("The selected authentication mechanism is not implemented.");
         }
 
         if (Authentication == ClientAuthentication.None && !Password.IsDefaultOrEmpty)
         {
-            throw new ArgumentException("A password requires low-level authentication.");
+            throw new ArgumentException("A password requires an authentication mechanism.");
+        }
+
+        if (Authentication == ClientAuthentication.High)
+        {
+            if (Password.IsDefaultOrEmpty || Password.Length != HighSecretLength)
+            {
+                throw new ArgumentException($"High authentication requires a {HighSecretLength}-byte secret.");
+            }
+
+            if ((Conformance & DlmsConformance.Action) == DlmsConformance.None)
+            {
+                throw new ArgumentException("High authentication requires Action conformance.");
+            }
         }
     }
 }

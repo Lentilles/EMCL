@@ -19,6 +19,12 @@ public sealed record AcseApdu(AcseKind Kind, ImmutableArray<BerElement> Fields) 
     public ImmutableArray<byte>? UserInformation => Find(AcseFieldTags.UserInformation) is { } element ? Unwrap(element, BerEncoding.OctetStringTag) : null;
     /// <summary>Gets the application-context object-identifier octets, or null when the field is absent.</summary>
     public ImmutableArray<byte>? ApplicationContext => Find(AcseFieldTags.ApplicationContextName) is { } element ? Unwrap(element, BerEncoding.ObjectIdentifierTag) : null;
+    /// <summary>Gets the server challenge in an AARE, or null when it is absent.</summary>
+    public ImmutableArray<byte>? RespondingAuthenticationValue => Find(AcseFieldTags.RespondingAuthenticationValue) is { } element
+        ? Unwrap(element, AcseFieldTags.AuthenticationGraphicString) : null;
+    /// <summary>Gets the client authentication value in an AARQ, or null when it is absent.</summary>
+    public ImmutableArray<byte>? CallingAuthenticationValue => Find(AcseFieldTags.CallingAuthenticationValue) is { } element
+        ? Unwrap(element, AcseFieldTags.AuthenticationGraphicString) : null;
 
     /// <summary>Gets the raw AARE association-result code, or null when absent.</summary>
     public byte? Result => Find(AcseFieldTags.AssociationResult) is { } element

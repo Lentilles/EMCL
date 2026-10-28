@@ -1,0 +1,34 @@
+{
+  "connection": {
+    "transport": "WrapperTcp",
+    "host": "127.0.0.1",
+    "tcpPort": 13001,
+    "clientWrapperPort": 17,
+    "serverWrapperPort": 1,
+    "connectTimeoutSeconds": 10
+  },
+  "association": {
+    "profileId": "Spodes.4",
+    "version": 1,
+    "logicalName": "0.0.40.0.0.255",
+    "logicalDeviceId": "meter-1",
+    "associationId": "public",
+    "authentication": "None",
+    "password": null,
+    "passwordHex": null,
+    "passwordEnvironmentVariable": null,
+    "requestTimeoutSeconds": 30,
+    "maxReceivePduSize": 1024,
+    "conformance": "Get, BlockTransferWithGet"
+  },
+  "limits": {
+    "maxMessageBytes": 1048576,
+    "maxDepth": 64,
+    "maxCollectionItems": 100000,
+    "maxBlockCount": 4096
+  },
+  "output": {
+    "path": "association.json",
+    "overwrite": true
+  }
+}

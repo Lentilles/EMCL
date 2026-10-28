@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ChangeListManager">
+    <list default="true" id="0adb095e-1d0e-472c-9faf-0d3b0a605016" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/COVERAGE.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/COVERAGE.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/EMCL.Examples/EMCL.Examples.csproj" beforeDir="false" afterPath="$PROJECT_DIR$/examples/EMCL.Examples/EMCL.Examples.csproj" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/examples/EMCL.Examples/Program.cs" beforeDir="false" afterPath="$PROJECT_DIR$/examples/EMCL.Examples/Program.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/EMCL.Client/Association/ClientAuthentication.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/EMCL.Client/Association/ClientAuthentication.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/EMCL.Client/Association/IClientAssociationNegotiator.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/EMCL.Client/Association/IClientAssociationNegotiator.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/EMCL.Client/Association/LnAssociationNegotiator.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/EMCL.Client/Association/LnAssociationNegotiator.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/EMCL.Client/Association/LnAssociationOptions.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/EMCL.Client/Association/LnAssociationOptions.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/EMCL.Client/Sessions/DlmsClientSession.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/EMCL.Client/Sessions/DlmsClientSession.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/EMCL.Protocol/Acse/AcseApdu.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/EMCL.Protocol/Acse/AcseApdu.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/EMCL.Protocol/Acse/AcseFieldTags.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/EMCL.Protocol/Acse/AcseFieldTags.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/EMCL.Tests/Client/ClientNegotiationTests.cs" beforeDir="false" afterPath="$PROJECT_DIR$/tests/EMCL.Tests/Client/ClientNegotiationTests.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/EMCL.Tests/EMCL.Tests.csproj" beforeDir="false" afterPath="$PROJECT_DIR$/tests/EMCL.Tests/EMCL.Tests.csproj" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 0,
+  "fromUser": false
+}]]></component>
+  <component name="ProjectId" id="3LKMSzpHWgSEtqitYJGodqvDHcJ" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-4abd2a77f808-JavaScript-WS-262.10315.144" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="0adb095e-1d0e-472c-9faf-0d3b0a605016" name="Changes" comment="" />
+      <created>1793198310764</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1793198310764</updated>
+      <workItem from="1793198312240" duration="1000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+</project>

@@ -15,6 +15,8 @@ public static class AcseFieldTags
     public const byte MechanismName = 0x8b;
     /// <summary>The calling-authentication-value field.</summary>
     public const byte CallingAuthenticationValue = 0xac;
+    /// <summary>The responding-authentication-value field in an AARE.</summary>
+    public const byte RespondingAuthenticationValue = 0xaa;
     /// <summary>The user-information field.</summary>
     public const byte UserInformation = 0xbe;
     /// <summary>The ACSE service-user diagnostic choice.</summary>

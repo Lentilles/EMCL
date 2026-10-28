@@ -8,12 +8,25 @@
 dotnet restore EMCL.slnx --disable-parallel
 dotnet build EMCL.slnx -c Release --no-restore -m:1
 dotnet test --project tests/EMCL.Tests/EMCL.Tests.csproj -c Release --no-build --no-restore
-dotnet run --project examples/EMCL.Examples -c Release --no-build
+dotnet run --project examples/EMCL.Examples -c Release --no-build -- --demo
 ```
 
 `EMCL.Tests` содержит тесты `[Fact]` и параметризованные `[Theory]`, разделённые по подсистемам. Эталонные сообщения проверяются как отдельные тестовые сценарии. Анализаторы xUnit включены; асинхронные тесты используют токен отмены тестового контекста.
 
 Публичный API документирован XML-комментариями на английском. XML-файлы генерируются рядом с DLL и включаются в NuGet-пакеты. Отсутствие документации (`CS1591`), предупреждения компилятора и включённых анализаторов блокируют сборку. Правила разработки и команды проверки описаны в [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Экспорт ассоциации реального прибора
+
+Консольный пример подключается по Wrapper/TCP или через HDLC/TCP-шлюз, читает `object_list` (в том числе GET-блоками) и сохраняет JSON с OBIS-кодами, классами, атрибутами, методами и исходными/расшифрованными правами доступа.
+
+```sh
+cp examples/EMCL.Examples/meter.example.json examples/EMCL.Examples/meter.local.json
+dotnet run --project examples/EMCL.Examples -c Release
+```
+
+Для запуска из IDE достаточно выбрать `EMCL.Examples` как запускаемый проект и нажать **Run**. Без аргументов приложение предпочитает `meter.local.json`, затем `meter.example.json`. Перед запуском отредактируйте транспорт, адреса, TCP-порт, профиль, версию ассоциации и аутентификацию в конфиге. Полный путь результата печатается в консоли. Путь результата и разрешение перезаписи также задаются в конфиге. Относительный путь считается от каталога копии конфига рядом с приложением. Поля пароля не включаются в экспорт.
+
+[Параметры конфигурации и схема JSON](examples/EMCL.Examples/README.md) · [Шаблон конфигурации](examples/EMCL.Examples/meter.example.json).
 
 ## Структура репозитория
 
@@ -212,7 +225,7 @@ HDLC использует `HdlcCodec` и `HdlcApduAdapter`. Передайте �
 
 ## Клиентская LN-сессия
 
-`DlmsClientSession` получает уже подключённый `IApduChannel`: прямой APDU-канал, `FramedApduChannel<WrapperFrame>` или HDLC-канал с установленным приложением соединением. Сессия находится в отдельной сборке `EMCL.Client`, которая не зависит от профилей и кадров.
+`DlmsClientSession` получает уже подключённый `IApduChannel`: прямой APDU-канал, `FramedApduChannel<WrapperFrame>` или HDLC-канал с установленным приложением соединением. Консольный пример содержит ограниченный HDLC/TCP-канал с SNRM/UA и RR для приёма сегментов. Сессия находится в отдельной сборке `EMCL.Client`, которая не зависит от профилей и кадров.
 
 ```csharp
 using EMCL.Client.Sessions;
@@ -245,7 +258,7 @@ await client.ReleaseAsync(cancellationToken);
 
 `ReadNotificationsAsync` принимает согласованные DataNotification независимо от ожидающих запросов. Приложение должно опустошать буфер; переполнение завершает сессию с явной ошибкой. Отмена перечисления уведомлений не отменяет сессию.
 
-Настройки `LnAssociationOptions` поддерживают отсутствие аутентификации и LLS через неизменяемые байты `Password`. HLS и защищённые сообщения требуют другой реализации. Для изменения ACSE-полей и проверок внедрите `IClientAssociationNegotiator`; для представления APDU — `IIncrementalCodec<DlmsApdu>`; весь клиент заменяется через `IDlmsClientSession`. Формирование соединения TCP/Serial, HDLC SNRM/UA/DISC, ARQ и повторы остаются следующими этапами.
+Настройки `LnAssociationOptions` поддерживают отсутствие аутентификации, LLS и HLS High (AES-128 challenge-response) через неизменяемые байты `Password`. HLS High вызывает метод Association LN и проверяет ответ до открытия сессии. Для другого механизма реализуйте `IClientAssociationNegotiator` и `IClientHighLevelAuthenticator`; для представления APDU — `IIncrementalCodec<DlmsApdu>`; весь клиент заменяется через `IDlmsClientSession`. Защищённые APDU требуют отдельной реализации. Готовые соединения TCP/Serial, полный жизненный цикл HDLC с ARQ и повторы остаются следующими этапами; пример реализует только необходимый ему HDLC/TCP-обмен.
 
 Полный исполняемый пример с локальным объектным пайплайном: [ClientSessionExample.cs](examples/EMCL.Examples/Client/ClientSessionExample.cs). Тестовый peer в примере демонстрирует обмен и не является готовой серверной сессией.
 
@@ -263,7 +276,7 @@ await client.ReleaseAsync(cancellationToken);
 - Demand Register v0: текущая/последняя средняя величина, reset/next_period, подача измерений и ограниченное окно выборок. Стандартный калькулятор — Float64 со средним одинаково взвешенных выборок; интегрирование энергии, вес по времени и округление задаются своим `IDemandValueCalculator`. Сбор измерений и переходы периодов запускает приложение.
 - Register Activation v0: назначения регистров, создание/замена/удаление масок и выбор active_mask. Приложение запрашивает `IsEnabledAsync` перед измерением. Индексы маски начинаются с 1, максимум 255 назначений; выбранную маску можно удалить после выбора другой.
 - Clock: частичная установка времени, корректировки, preset и shift через `IClockSource`. `MemoryClockSource` хранит частный сдвиг относительно `TimeProvider`, не изменяя часы ОС. Это локальная модель; планирование DST и физическое плавное управление часами предоставляются источником приложения через `ShiftTime`.
-- Association LN: видимый список, add/remove объектов, управление пользователями v3; HLS и изменение HLS-секрета требуют внешнего security handler.
+- Association LN: видимый список, add/remove объектов, управление пользователями v3; локальная серверная обработка HLS и изменение HLS-секрета требуют внешнего security handler.
 - Profile Generic: capture/reset, FIFO/LIFO и четыре сортировки по значению, ёмкость, array/compact-array, селекторы диапазона и записей. Изменение capture_objects очищает буфер и зависимые профили. Автоматический периодический capture запускает приложение. Восстановление сокращённых значений `null-data` из предыдущих записей не выполняется неявно.
 
 Подробная матрица возможностей и используемые источники — в [docs/COVERAGE.md](docs/COVERAGE.md).

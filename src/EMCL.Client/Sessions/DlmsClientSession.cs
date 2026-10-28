@@ -4,6 +4,7 @@ using EMCL.Client.Association;
 using EMCL.Client.Exceptions;
 using EMCL.Client.Internal;
 using EMCL.Core.Codecs;
+using EMCL.Core.Operations;
 using EMCL.Protocol.Acse;
 using EMCL.Protocol.Apdu;
 using EMCL.Protocol.BlockTransfer;
@@ -131,8 +132,23 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
             {
                 RequireState(ClientSessionState.Associating);
                 negotiated = context;
-                state = ClientSessionState.Associated;
                 associationReady.TrySetResult();
+            }
+
+            if (negotiator is IClientHighLevelAuthenticator authenticator)
+            {
+                var operation = authenticator.CreateAuthenticationOperation(request, response, options.Association);
+                if (operation != null)
+                {
+                    var result = await AuthenticateAsync(operation, deadline.Token).ConfigureAwait(false);
+                    authenticator.ValidateAuthenticationResponse(result.Result.Value, request, response, options.Association);
+                }
+            }
+
+            lock (gate)
+            {
+                RequireState(ClientSessionState.Associating);
+                state = ClientSessionState.Associated;
             }
 
             return context;
@@ -148,6 +164,36 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
         {
             Fault(error);
             throw;
+        }
+    }
+
+    private async ValueTask<LnResponse> AuthenticateAsync(CosemOperation operation, CancellationToken cancellationToken)
+    {
+        PendingOperation pending;
+        lock (gate)
+        {
+            RequireState(ClientSessionState.Associating);
+            ValidateOperation(operation);
+            pending = RegisterOperation(operation.Kind);
+        }
+
+        try
+        {
+            await SendAsync(new LnRequest(pending.Invoke, operation), SendLimit(), cancellationToken).ConfigureAwait(false);
+            var result = await ReceiveOperationAsync(pending, cancellationToken).ConfigureAwait(false);
+            ThrowRemoteError(result);
+            return result;
+        }
+        finally
+        {
+            lock (gate)
+            {
+                operations.Remove(pending.Id);
+                if (--activeOperations == 0)
+                {
+                    idle.TrySetResult();
+                }
+            }
         }
     }
 

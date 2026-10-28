@@ -1,13 +1,17 @@
 using System.Buffers;
 using EMCL.Client.Exceptions;
 using EMCL.Core.Codecs;
+using EMCL.Core.Objects;
+using EMCL.Core.Operations;
+using EMCL.Core.Values;
+using EMCL.Objects.Definitions;
 using EMCL.Protocol.Acse;
 using EMCL.Protocol.Apdu;
 
 namespace EMCL.Client.Association;
 
-/// <summary>Negotiates confirmed, unciphered LN associations with optional low-level authentication.</summary>
-public sealed class LnAssociationNegotiator : IClientAssociationNegotiator
+/// <summary>Negotiates confirmed, unciphered LN associations with optional low-level or AES high-level authentication.</summary>
+public sealed class LnAssociationNegotiator : IClientAssociationNegotiator, IClientHighLevelAuthenticator
 {
     private const byte AcceptedResult = 0;
     private const byte NoDiagnostic = 0;
@@ -25,9 +29,12 @@ public sealed class LnAssociationNegotiator : IClientAssociationNegotiator
         proposal.Validate();
         var initiate = new InitiateRequest([], true, null, DlmsNegotiation.Version6,
             (uint)proposal.Conformance, proposal.MaxReceivePduSize);
+        var authenticationValue = proposal.Authentication == ClientAuthentication.High
+            ? HighAesAuthentication.NewChallenge()
+            : proposal.Password.IsDefault ? [] : proposal.Password.ToArray();
         return AcseApdu.Aarq(codec.EncodeBytes(initiate),
             authenticationMechanism: proposal.Authentication == ClientAuthentication.None ? null : (byte)proposal.Authentication,
-            authenticationValue: proposal.Password.IsDefault ? [] : proposal.Password.AsSpan());
+            authenticationValue: authenticationValue);
     }
 
     /// <inheritdoc />
@@ -36,9 +43,20 @@ public sealed class LnAssociationNegotiator : IClientAssociationNegotiator
         ArgumentNullException.ThrowIfNull(response);
         ArgumentNullException.ThrowIfNull(proposal);
         proposal.Validate();
-        if (response.Kind != AcseKind.Aare || response.Result != AcceptedResult || response.Diagnostic?.Code != NoDiagnostic)
+        bool authenticationPending = proposal.Authentication == ClientAuthentication.High
+            && response.Diagnostic?.Code == (byte)AcseServiceUserDiagnostic.AuthenticationRequired;
+        if (response.Kind != AcseKind.Aare || response.Result != AcceptedResult
+            || response.Diagnostic?.Code != NoDiagnostic && !authenticationPending)
         {
-            throw new DlmsAssociationException("The peer rejected the association or requires an unsupported authentication exchange.", response);
+            var diagnostic = response.Diagnostic;
+            string reason = diagnostic?.SourceTag switch
+            {
+                AcseFieldTags.DiagnosticServiceUser => Enum.GetName((AcseServiceUserDiagnostic)diagnostic.Code) ?? "Unknown",
+                AcseFieldTags.DiagnosticServiceProvider => Enum.GetName((AcseServiceProviderDiagnostic)diagnostic.Code) ?? "Unknown",
+                _ => "Unknown"
+            };
+            throw new DlmsAssociationException($"Association rejected: result={response.Result?.ToString() ?? "missing"}, "
+                + $"diagnostic={diagnostic?.Code.ToString() ?? "missing"} ({reason}).", response);
         }
 
         var proposedContext = AcseApdu.Aarq([]).ApplicationContext!.Value;
@@ -67,6 +85,33 @@ public sealed class LnAssociationNegotiator : IClientAssociationNegotiator
         }
 
         return new(initiate.DlmsVersion, conformance, initiate.MaxReceivePduSize, proposal.MaxReceivePduSize);
+    }
+
+    /// <inheritdoc />
+    public CosemOperation? CreateAuthenticationOperation(AcseApdu request, AcseApdu response, LnAssociationOptions proposal)
+    {
+        if (proposal.Authentication != ClientAuthentication.High)
+        {
+            return null;
+        }
+
+        var challenge = HighAesAuthentication.RequireChallenge(response.RespondingAuthenticationValue, response);
+        var reply = HighAesAuthentication.Encrypt(proposal.Password.AsSpan(), challenge);
+        return new(CosemOperationKind.Invoke, CosemClassIds.AssociationLn, LogicalName.Parse("0.0.40.0.0.255"),
+            AssociationLnMembers.Methods.ReplyToHlsAuthentication, DlmsValue.Octets(reply));
+    }
+
+    /// <inheritdoc />
+    public void ValidateAuthenticationResponse(DlmsValue? value, AcseApdu request, AcseApdu response, LnAssociationOptions proposal)
+    {
+        if (proposal.Authentication != ClientAuthentication.High)
+        {
+            return;
+        }
+
+        var challenge = HighAesAuthentication.RequireChallenge(request.CallingAuthenticationValue, response);
+        var expected = HighAesAuthentication.Encrypt(proposal.Password.AsSpan(), challenge);
+        HighAesAuthentication.Verify(value, expected, response);
     }
 
     /// <inheritdoc />
