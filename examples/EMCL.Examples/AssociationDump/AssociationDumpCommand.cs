@@ -1,14 +1,13 @@
 using EMCL.Client.Association;
 using EMCL.Client.Sessions;
 using EMCL.Composition;
-using EMCL.Core.Objects;
+using EMCL.Core.Values;
 using EMCL.Examples.AssociationDump.Configuration;
 using EMCL.Examples.AssociationDump.Export;
 using EMCL.Examples.AssociationDump.Import;
 using EMCL.Examples.AssociationDump.Logging;
 using EMCL.Framing;
 using EMCL.Objects.Association;
-using EMCL.Objects.Definitions;
 using EMCL.Transport.Channels;
 
 namespace EMCL.Examples.AssociationDump;
@@ -44,22 +43,28 @@ internal static class AssociationDumpCommand
         await output.WriteLineAsync("Association established. Reading object_list...");
         var association = configuration.Settings.Association;
         var importer = new EmclBuilder { Limits = configuration.Settings.Limits }.CreateImporter();
-        ImportedAssociation imported;
+        await using var objectStream = await client.OpenObjectListAsync(importer, association.Version,
+            configuration.AssociationName, cancellationToken);
+        await output.WriteLineAsync($"The meter reports {objectStream.TotalCount} object_list entries.");
+        var entries = new List<DlmsValue>(objectStream.TotalCount);
+        await foreach (var entry in objectStream.WithCancellation(cancellationToken))
+        {
+            entries.Add(entry.RawValue);
+            await output.WriteLineAsync($"[{objectStream.CurrentCount}/{objectStream.TotalCount}] "
+                + $"{entry.LogicalName} class={entry.Descriptor.Key.ClassId} version={entry.Descriptor.Key.ClassVersion}");
+        }
+
+        var list = DlmsValue.Array([.. entries]);
         string[] warnings = [];
         if (association.IgnoreIdenticalObjectListEntries)
         {
-            var list = await client.GetAsync(CosemClassIds.AssociationLn, configuration.AssociationName,
-                AssociationLnMembers.Attributes.ObjectList, cancellationToken: cancellationToken);
             var filtered = IdenticalObjectListDuplicateFilter.Apply(list, configuration.Settings.Limits);
             warnings = filtered.Warnings;
-            imported = importer.Import(filtered.Value, association.LogicalDeviceId,
-                association.AssociationId, association.Version);
+            list = filtered.Value;
         }
-        else
-        {
-            imported = await client.LoadCatalogAsync(importer, association.LogicalDeviceId,
-                association.AssociationId, association.Version, configuration.AssociationName, cancellationToken);
-        }
+
+        ImportedAssociation imported = importer.Import(list, association.LogicalDeviceId,
+            association.AssociationId, association.Version);
 
         var document = AssociationDocumentFactory.Create(imported, configuration, negotiated, DateTimeOffset.UtcNow,
             warnings);

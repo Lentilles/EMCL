@@ -63,6 +63,9 @@ public sealed class AssociationDumpCommandTests
         Assert.True(access.GetProperty("read").GetBoolean());
         Assert.False(access.GetProperty("write").GetBoolean());
         Assert.Contains("Saved 2 objects", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("The meter reports 2 object_list entries.", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("[1/2] 1.0.1.8.0.255", output.ToString(), StringComparison.Ordinal);
+        Assert.Contains("[2/2] 0.0.96.1.0.255", output.ToString(), StringComparison.Ordinal);
         Assert.Contains(outputPath, output.ToString(), StringComparison.Ordinal);
         Assert.Contains("[0001] TX Aarq", output.ToString(), StringComparison.Ordinal);
         Assert.Contains("[0002] RX Aare", output.ToString(), StringComparison.Ordinal);

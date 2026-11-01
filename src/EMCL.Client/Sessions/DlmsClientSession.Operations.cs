@@ -20,7 +20,11 @@ public sealed partial class DlmsClientSession
     private static readonly LogicalName CurrentAssociation = LogicalName.Parse("0.0.40.0.0.255");
 
     /// <inheritdoc />
-    public async ValueTask<LnResponse> ExecuteAsync(CosemOperation operation, CancellationToken cancellationToken = default)
+    public ValueTask<LnResponse> ExecuteAsync(CosemOperation operation, CancellationToken cancellationToken = default)
+        => ExecuteObservedAsync(operation, null, cancellationToken);
+
+    private async ValueTask<LnResponse> ExecuteObservedAsync(CosemOperation operation,
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask>? onGetBlock, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
@@ -36,7 +40,7 @@ public sealed partial class DlmsClientSession
 
         try
         {
-            return await ExecuteCoreAsync(operation, cancellationToken).ConfigureAwait(false);
+            return await ExecuteCoreAsync(operation, onGetBlock, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -50,7 +54,8 @@ public sealed partial class DlmsClientSession
         }
     }
 
-    private async ValueTask<LnResponse> ExecuteCoreAsync(CosemOperation operation, CancellationToken cancellationToken)
+    private async ValueTask<LnResponse> ExecuteCoreAsync(CosemOperation operation,
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask>? onGetBlock, CancellationToken cancellationToken)
     {
         using var queued = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetimeToken);
         try
@@ -78,7 +83,7 @@ public sealed partial class DlmsClientSession
             {
                 await SendAsync(new LnRequest(pending.Invoke, operation), SendLimit(), deadline.Token,
                     () => attempted = true).ConfigureAwait(false);
-                return await ReceiveOperationAsync(pending, deadline.Token).ConfigureAwait(false);
+                return await ReceiveOperationAsync(pending, onGetBlock, deadline.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -163,10 +168,16 @@ public sealed partial class DlmsClientSession
             throw new NotSupportedException("An explicit Association LN version 1 or 3 is required.");
         }
 
-        var value = await GetAsync(CosemClassIds.AssociationLn, associationObject ?? CurrentAssociation,
-            AssociationLnMembers.Attributes.ObjectList, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await using var stream = await OpenObjectListAsync(importer, associationVersion, associationObject,
+            cancellationToken).ConfigureAwait(false);
+        var entries = new List<DlmsValue>(stream.TotalCount);
+        await foreach (var entry in stream.WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            entries.Add(entry.RawValue);
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
-        return importer.Import(value, logicalDeviceId, associationId, associationVersion);
+        return importer.Import(DlmsValue.Array([.. entries]), logicalDeviceId, associationId, associationVersion);
     }
 
     private PendingOperation RegisterOperation(CosemOperationKind kind)
@@ -187,7 +198,8 @@ public sealed partial class DlmsClientSession
         return pending;
     }
 
-    private async ValueTask<LnResponse> ReceiveOperationAsync(PendingOperation pending, CancellationToken cancellationToken)
+    private async ValueTask<LnResponse> ReceiveOperationAsync(PendingOperation pending,
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask>? onGetBlock, CancellationToken cancellationToken)
     {
         var response = await pending.ReceiveAsync(cancellationToken).ConfigureAwait(false);
         if (response is LnResponse normal)
@@ -219,6 +231,11 @@ public sealed partial class DlmsClientSession
                 }
 
                 throw new DlmsProtocolException($"The GET block sequence or resource bound is invalid: {assembled.Error}.");
+            }
+
+            if (onGetBlock != null)
+            {
+                await onGetBlock(block.Data.ToArray(), cancellationToken).ConfigureAwait(false);
             }
 
             if (assembled.Complete)

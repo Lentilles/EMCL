@@ -61,6 +61,14 @@ public interface IDlmsClientSession : IAsyncDisposable
     /// <returns>The optional return value.</returns>
     ValueTask<DlmsValue?> ActionAsync(ushort classId, LogicalName logicalName, sbyte method,
         DlmsValue? parameter = null, CancellationToken cancellationToken = default);
+    /// <summary>Starts one object_list GET and returns a single-use stream after its array count is known.</summary>
+    /// <param name="importer">The importer used to validate each object and resolve its class descriptor.</param>
+    /// <param name="associationVersion">The Association LN version used to interpret access rights.</param>
+    /// <param name="associationObject">The remote association name; null selects the standard current association.</param>
+    /// <param name="cancellationToken">Cancellation of the complete GET exchange.</param>
+    /// <returns>A stream with the advertised object count and incrementally validated entries.</returns>
+    ValueTask<AssociationObjectStream> OpenObjectListAsync(AssociationImporter importer, byte associationVersion,
+        LogicalName? associationObject = null, CancellationToken cancellationToken = default);
     /// <summary>Reads object_list and atomically imports it using an explicit Association LN version.</summary>
     /// <param name="importer">The application's configured importer and object factory.</param>
     /// <param name="logicalDeviceId">The imported logical-device identity.</param>

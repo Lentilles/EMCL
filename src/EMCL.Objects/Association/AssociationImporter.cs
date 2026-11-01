@@ -128,7 +128,7 @@ public sealed class AssociationImporter
     /// <param name="entry">One four-field Association LN object_list element.</param>
     /// <param name="version">The Association LN version used to interpret raw permission modes.</param>
     /// <returns>The resolved descriptor, logical name, and raw association permissions.</returns>
-    internal (CosemClassDescriptor Descriptor, LogicalName Name, ObjectAccessRights Rights) ParseEntry(DlmsValue entry, byte version)
+    public (CosemClassDescriptor Descriptor, LogicalName Name, ObjectAccessRights Rights) ParseEntry(DlmsValue entry, byte version)
     {
         if (version is not (AssociationLnMembers.Version1 or AssociationLnMembers.Version3))
         {

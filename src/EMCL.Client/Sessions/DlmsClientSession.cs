@@ -203,7 +203,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
         try
         {
             await SendAsync(new LnRequest(pending.Invoke, operation), SendLimit(), cancellationToken).ConfigureAwait(false);
-            var result = await ReceiveOperationAsync(pending, cancellationToken).ConfigureAwait(false);
+            var result = await ReceiveOperationAsync(pending, null, cancellationToken).ConfigureAwait(false);
             ThrowRemoteError(result);
             return result;
         }
