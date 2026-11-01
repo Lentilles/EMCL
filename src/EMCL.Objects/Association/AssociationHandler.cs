@@ -46,7 +46,7 @@ public sealed class AssociationHandler(ObjectCatalog catalog, AssociationImporte
 
         if (operation.Index is AssociationLnMembers.Methods.AddObject or AssociationLnMembers.Methods.RemoveObject)
         {
-            var parsed = importer.ParseEntry(operation.Value!, cosemObject.Descriptor.Key.ClassVersion, catalog.ProfileId);
+            var parsed = importer.ParseEntry(operation.Value!, cosemObject.Descriptor.Key.ClassVersion);
             var associationContext = Context(cosemObject, context);
             var existing = catalog.Find(parsed.Name);
             if (operation.Index == AssociationLnMembers.Methods.AddObject)

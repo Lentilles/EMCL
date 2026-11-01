@@ -5,6 +5,20 @@ namespace EMCL.Framing.Hdlc.Frames;
 /// <param name="Length">The address length in wire octets; one, two, or four.</param>
 public readonly record struct HdlcAddress(uint Value, byte Length)
 {
+    /// <summary>Compares the logical and physical components of two compound server addresses, regardless of wire length.</summary>
+    public bool HasSameServerComponents(HdlcAddress other)
+    {
+        if (Length is not (HdlcAddressFormat.ServerLength or HdlcAddressFormat.ExtendedServerLength)
+            || other.Length is not (HdlcAddressFormat.ServerLength or HdlcAddressFormat.ExtendedServerLength))
+        {
+            return false;
+        }
+
+        int bits = Length == HdlcAddressFormat.ServerLength ? HdlcAddressFormat.GroupBits : HdlcAddressFormat.ExtendedComponentBits;
+        int otherBits = other.Length == HdlcAddressFormat.ServerLength ? HdlcAddressFormat.GroupBits : HdlcAddressFormat.ExtendedComponentBits;
+        return Value >> bits == other.Value >> otherBits
+            && (Value & ((1u << bits) - 1)) == (other.Value & ((1u << otherBits) - 1));
+    }
     /// <summary>Creates a one-octet client address from a seven-bit SAP.</summary>
     /// <param name="sap">The seven-bit client SAP.</param>
     public static HdlcAddress Client(byte sap) => sap <= HdlcAddressFormat.GroupMask ? new(sap, HdlcAddressFormat.ClientLength) : throw new ArgumentOutOfRangeException(nameof(sap));

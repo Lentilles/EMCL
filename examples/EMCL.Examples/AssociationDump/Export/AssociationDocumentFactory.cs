@@ -13,15 +13,16 @@ internal static class AssociationDocumentFactory
         NegotiatedAssociation negotiated, DateTimeOffset exportedAtUtc, IReadOnlyList<string>? warnings = null)
     {
         var settings = configuration.Settings;
-        var connection = settings.Connection;
+        var connection = settings.Channel.Connection;
+        var framing = settings.Channel.Framing;
         var association = settings.Association;
-        bool wrapper = connection.Transport == MeterTransport.WrapperTcp;
-        var source = new AssociationSource(connection.Host, connection.TcpPort, connection.Transport.ToString(),
-            wrapper ? connection.ClientWrapperPort : null, wrapper ? connection.ServerWrapperPort : null,
-            wrapper ? null : connection.HdlcClientAddress,
-            wrapper ? null : connection.HdlcServerLogicalAddress,
-            wrapper ? null : connection.HdlcServerPhysicalAddress,
-            imported.Catalog.ProfileId, imported.Access.AssociationVersion,
+        var wrapper = framing as WrapperFramingSettings;
+        var hdlc = framing as HdlcFramingSettings;
+        var source = new AssociationSource(connection.Host, connection.TcpPort,
+            wrapper != null ? "WrapperTcp" : "HdlcTcp",
+            wrapper?.ClientPort, wrapper?.ServerPort,
+            hdlc?.ClientAddress, hdlc?.ServerLogicalAddress, hdlc?.ServerPhysicalAddress,
+            imported.Access.AssociationVersion,
             configuration.AssociationName.ToString(), imported.Catalog.LogicalDeviceId, imported.Access.AssociationId,
             association.Authentication.ToString());
         var negotiation = new NegotiationDocument(negotiated.DlmsVersion,

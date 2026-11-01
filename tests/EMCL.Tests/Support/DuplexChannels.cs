@@ -1,5 +1,4 @@
 using System.Threading.Channels;
-using EMCL.Core.Codecs;
 using EMCL.Framing;
 using EMCL.Transport.Channels;
 using EMCL.Transport.Streams;
@@ -50,10 +49,8 @@ internal sealed class DuplexByteTransport(ChannelReader<byte[]> input, ChannelWr
         var toServer = Channel.CreateUnbounded<byte[]>();
         var toClient = Channel.CreateUnbounded<byte[]>();
         return (
-            new FramedApduChannel<WrapperFrame>(new DuplexByteTransport(toClient.Reader, toServer.Writer, 1),
-                new WrapperCodec(), new WrapperApduAdapter(16, 1)),
-            new FramedApduChannel<WrapperFrame>(new DuplexByteTransport(toServer.Reader, toClient.Writer, 3),
-                new WrapperCodec(), new WrapperApduAdapter(1, 16)));
+            ApduChannels.Wrapper(new DuplexByteTransport(toClient.Reader, toServer.Writer, 1), 16, 1),
+            ApduChannels.Wrapper(new DuplexByteTransport(toServer.Reader, toClient.Writer, 3), 1, 16));
     }
 
     public async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)

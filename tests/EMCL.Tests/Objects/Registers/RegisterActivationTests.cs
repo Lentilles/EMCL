@@ -8,12 +8,10 @@ namespace EMCL.Tests.Objects.Registers;
 
 public sealed class RegisterActivationTests
 {
-    [Theory]
-    [InlineData(BlueBook16Profile.Id)]
-    [InlineData(Spodes4Profile.Id)]
-    public async Task AddsAssignmentsReplacesMasksAndSelectsUsingOneBasedIndices(string profile)
+    [Fact]
+    public async Task AddsAssignmentsReplacesMasksAndSelectsUsingOneBasedIndices()
     {
-        var device = new EmclBuilder().Build("meter", profile);
+        var device = new EmclBuilder().Build("meter");
         var activation = device.Add(6, 0, LogicalName.Parse("0.0.14.0.0.255"));
         var first = device.Add(4, 0, LogicalName.Parse("1.0.1.8.0.255"));
         var second = device.Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
@@ -51,7 +49,7 @@ public sealed class RegisterActivationTests
     [Fact]
     public async Task RejectsBadReferencesIndicesAndCrossAttributeChangesWithoutMutation()
     {
-        var device = new EmclBuilder().Build("meter", BlueBook16Profile.Id);
+        var device = new EmclBuilder().Build("meter");
         var activation = device.Add(6, 0, LogicalName.Parse("0.0.14.0.0.255"));
         var register = device.Add(3, 0, LogicalName.Parse("1.0.1.8.0.255"));
         var data = device.Add(1, 0, LogicalName.Parse("0.0.96.1.0.255"));
@@ -89,7 +87,7 @@ public sealed class RegisterActivationTests
     [Fact]
     public async Task PreservesAssignmentPositionsAndBoundsUnsignedIndexSpace()
     {
-        var device = new EmclBuilder().Build("meter", BlueBook16Profile.Id);
+        var device = new EmclBuilder().Build("meter");
         var activation = device.Add(6, 0, LogicalName.Parse("0.0.14.0.0.255"));
         var register = device.Add(3, 0, LogicalName.Parse("1.0.1.8.0.255"));
         var reference = Reference(register);

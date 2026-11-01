@@ -5,15 +5,14 @@ using EMCL.Objects.ProfileGeneric;
 
 namespace EMCL.Objects.Definitions;
 
-/// <summary>Constructs reusable ProfileGeneric class metadata with explicit profile choices.</summary>
+/// <summary>Constructs reusable ProfileGeneric class metadata.</summary>
 public static class ProfileGenericClassDefinition
 {
     /// <summary>Creates an independent, versioned class descriptor.</summary>
-    /// <param name="profile">The standard-profile identifier assigned to the returned class key.</param>
-    /// <returns>The class descriptor with the supplied profile choices.</returns>
-    public static CosemClassDescriptor Create(string profile)
+    /// <returns>The class descriptor with the supplied member definitions.</returns>
+    public static CosemClassDescriptor Create()
     {
-        return DefinitionFactory.Class(profile, CosemClassIds.ProfileGeneric, ProfileGenericMembers.Version1, "Profile Generic",
+        return DefinitionFactory.Class(CosemClassIds.ProfileGeneric, ProfileGenericMembers.Version1, "Profile Generic",
             [DefinitionFactory.LogicalName(), new(ProfileGenericMembers.Attributes.Buffer, "buffer", Selectors: [ProfileSelectors.Range, ProfileSelectors.Entry], Constraint: value =>
                     value.Type is DlmsType.Array or DlmsType.CompactArray ? null : "Expected array or compact-array."),
                 new(ProfileGenericMembers.Attributes.CaptureObjects, "capture_objects", DlmsType.Array), new(ProfileGenericMembers.Attributes.CapturePeriod, "capture_period", DlmsType.UInt32),

@@ -12,7 +12,7 @@ using EMCL.Protocol.Axdr;
 
 namespace EMCL.Objects.Association;
 
-/// <summary>Imports raw A-XDR Association LN object lists using an explicitly selected profile and association version.</summary>
+/// <summary>Imports raw A-XDR Association LN object lists using an explicit association version.</summary>
 /// <remarks>Import does not infer attribute values or unknown class semantics. Unsupported class versions retain their exact identity in an untyped descriptor.</remarks>
 public sealed class AssociationImporter
 {
@@ -35,13 +35,12 @@ public sealed class AssociationImporter
     /// <summary>Builds a new catalog and permission snapshot from one complete Association LN object_list.</summary>
     /// <param name="input">The input byte sequence, decoded value, or stream to process.</param>
     /// <param name="logicalDeviceId">The caller-defined logical-device identity.</param>
-    /// <param name="profileId">The standard-profile identifier, including its edition.</param>
     /// <param name="associationId">The caller-defined association identity.</param>
     /// <param name="associationVersion">The Association LN version, either 1 or 3.</param>
     /// <returns>A new, fully validated catalog and immutable association permissions.</returns>
     /// <exception cref="AssociationImportException">The object list is malformed, incomplete, inconsistent, or contains trailing bytes.</exception>
     /// <exception cref="NotSupportedException">The association version is neither 1 nor 3.</exception>
-    public ImportedAssociation Import(ReadOnlySequence<byte> input, string logicalDeviceId, string profileId, string associationId, byte associationVersion)
+    public ImportedAssociation Import(ReadOnlySequence<byte> input, string logicalDeviceId, string associationId, byte associationVersion)
     {
         var result = new AxdrCodec(limits).Decode(input);
         if (result.Status != DecodeStatus.Done || result.Consumed != input.Length)
@@ -49,21 +48,20 @@ public sealed class AssociationImporter
             throw new AssociationImportException($"Invalid object_list: {result.Status}; {result.Error ?? "trailing bytes"}.");
         }
 
-        return Import(result.Value!, logicalDeviceId, profileId, associationId, associationVersion);
+        return Import(result.Value!, logicalDeviceId, associationId, associationVersion);
     }
 
     /// <summary>Reads one raw A-XDR object_list from a stream through EOF and then imports it atomically.</summary>
     /// <remarks>The stream is read through EOF and remains open. Live network data should first be delimited by the APDU or block-transfer layer.</remarks>
     /// <param name="input">The input byte sequence, decoded value, or stream to process.</param>
     /// <param name="logicalDeviceId">The caller-defined logical-device identity.</param>
-    /// <param name="profileId">The standard-profile identifier, including its edition.</param>
     /// <param name="associationId">The caller-defined association identity.</param>
     /// <param name="associationVersion">The Association LN version, either 1 or 3.</param>
     /// <param name="cancellationToken">A token that requests cancellation of the asynchronous operation.</param>
     /// <returns>A new, fully validated catalog and immutable association permissions.</returns>
     /// <exception cref="AssociationImportException">The object list is invalid or exceeds configured limits.</exception>
     /// <exception cref="OperationCanceledException">Cancellation was requested.</exception>
-    public async Task<ImportedAssociation> ImportAsync(Stream input, string logicalDeviceId, string profileId, string associationId, byte associationVersion, CancellationToken cancellationToken = default)
+    public async Task<ImportedAssociation> ImportAsync(Stream input, string logicalDeviceId, string associationId, byte associationVersion, CancellationToken cancellationToken = default)
     {
         using var buffer = new MemoryStream();
         byte[] chunk = new byte[ImportBufferBytes];
@@ -83,19 +81,18 @@ public sealed class AssociationImporter
             buffer.Write(chunk, 0, count);
         }
 
-        return Import(new ReadOnlySequence<byte>(buffer.ToArray()), logicalDeviceId, profileId, associationId, associationVersion);
+        return Import(new ReadOnlySequence<byte>(buffer.ToArray()), logicalDeviceId, associationId, associationVersion);
     }
 
     /// <summary>Builds a new catalog and permission snapshot from one complete Association LN object_list.</summary>
     /// <param name="value">The value to convert, validate, store, or encode.</param>
     /// <param name="logicalDeviceId">The caller-defined logical-device identity.</param>
-    /// <param name="profileId">The standard-profile identifier, including its edition.</param>
     /// <param name="associationId">The caller-defined association identity.</param>
     /// <param name="associationVersion">The Association LN version, either 1 or 3.</param>
     /// <returns>A new, fully validated catalog and immutable association permissions.</returns>
     /// <exception cref="AssociationImportException">The object list is malformed, incomplete, inconsistent, or contains trailing bytes.</exception>
     /// <exception cref="NotSupportedException">The association version is neither 1 nor 3.</exception>
-    public ImportedAssociation Import(DlmsValue value, string logicalDeviceId, string profileId, string associationId, byte associationVersion)
+    public ImportedAssociation Import(DlmsValue value, string logicalDeviceId, string associationId, byte associationVersion)
     {
         if (associationVersion is not (AssociationLnMembers.Version1 or AssociationLnMembers.Version3))
         {
@@ -110,11 +107,11 @@ public sealed class AssociationImporter
                 throw new FormatException("Too many objects.");
             }
 
-            var catalog = new ObjectCatalog(logicalDeviceId, profileId);
+            var catalog = new ObjectCatalog(logicalDeviceId);
             var rights = ImmutableDictionary.CreateBuilder<LogicalName, ObjectAccessRights>();
             foreach (var entry in list)
             {
-                var parsed = ParseEntry(entry, associationVersion, profileId);
+                var parsed = ParseEntry(entry, associationVersion);
                 catalog.Add(factory.Create(parsed.Descriptor, parsed.Name));
                 rights.Add(parsed.Name, parsed.Rights);
             }
@@ -130,9 +127,8 @@ public sealed class AssociationImporter
     /// <summary>Validates one object_list element and resolves its exact class definition or an untyped fallback.</summary>
     /// <param name="entry">One four-field Association LN object_list element.</param>
     /// <param name="version">The Association LN version used to interpret raw permission modes.</param>
-    /// <param name="profile">The selected standard-profile identifier.</param>
     /// <returns>The resolved descriptor, logical name, and raw association permissions.</returns>
-    internal (CosemClassDescriptor Descriptor, LogicalName Name, ObjectAccessRights Rights) ParseEntry(DlmsValue entry, byte version, string profile)
+    internal (CosemClassDescriptor Descriptor, LogicalName Name, ObjectAccessRights Rights) ParseEntry(DlmsValue entry, byte version)
     {
         if (version is not (AssociationLnMembers.Version1 or AssociationLnMembers.Version3))
         {
@@ -202,7 +198,7 @@ public sealed class AssociationImporter
             methodRights.Add(new(index, mode));
         }
 
-        var key = new ClassKey(profile, classId, classVersion);
+        var key = new ClassKey(classId, classVersion);
         var descriptor = definitions.Find(key) ?? new(
             key,
             $"Unknown class {classId} v{classVersion}",

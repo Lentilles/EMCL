@@ -1,7 +1,7 @@
-using EMCL.Examples.AssociationDump.Transport;
+using EMCL.Framing;
 using EMCL.Framing.Hdlc.Frames;
 
-namespace EMCL.Tests.Examples.AssociationDump;
+namespace EMCL.Tests.Transport;
 
 public sealed class HdlcNegotiationTests
 {

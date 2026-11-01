@@ -5,10 +5,6 @@ namespace EMCL.Examples.AssociationDump.Configuration;
 
 internal sealed record AssociationSettings
 {
-    public required string ProfileId
-    {
-        get; init;
-    }
     public required byte Version
     {
         get; init;
@@ -41,5 +37,6 @@ internal sealed record AssociationSettings
     public double RequestTimeoutSeconds { get; init; } = 30;
     public ushort MaxReceivePduSize { get; init; } = LnAssociationOptions.DefaultMaxReceivePduSize;
     public DlmsConformance Conformance { get; init; } = DlmsConformance.Get | DlmsConformance.BlockTransferWithGet;
+    public string? AdvertisedConformanceHex { get; init; }
     public bool IgnoreIdenticalObjectListEntries { get; init; }
 }

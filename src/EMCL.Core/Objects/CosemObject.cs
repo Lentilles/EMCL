@@ -42,7 +42,7 @@ public class CosemObject
         State.Set(LogicalNameAttributeIndex, DlmsValue.Octets(logicalName.ToBytes()));
     }
 
-    /// <summary>Replaces the descriptor while requiring the profile, class identifier, and version to remain unchanged.</summary>
+    /// <summary>Replaces the descriptor while requiring the class identifier and version to remain unchanged.</summary>
     /// <param name="descriptor">The exact class definition to apply.</param>
     /// <exception cref="ArgumentException">The replacement descriptor has a different class key.</exception>
     public void Rebind(CosemClassDescriptor descriptor)

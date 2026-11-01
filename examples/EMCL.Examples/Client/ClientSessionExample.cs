@@ -5,7 +5,6 @@ using EMCL.Core.Access;
 using EMCL.Core.Objects;
 using EMCL.Core.Values;
 using EMCL.Objects.Definitions;
-using EMCL.Profiles.BlueBook;
 
 namespace EMCL.Examples.Client;
 
@@ -14,7 +13,7 @@ internal static class ClientSessionExample
     internal static async Task RunAsync()
     {
         var builder = new EmclBuilder();
-        var meter = builder.Build("local-meter", BlueBook16Profile.Id);
+        var meter = builder.Build("local-meter");
         var register = meter.Add(CosemClassIds.Register, RegisterMembers.Version0, LogicalName.Parse("1.0.1.8.0.255"));
         register.State.Set(RegisterMembers.Attributes.Value, DlmsValue.Number(DlmsType.UInt32, 42));
         var association = meter.Add(CosemClassIds.AssociationLn, AssociationLnMembers.Version3,
@@ -34,7 +33,7 @@ internal static class ClientSessionExample
             DlmsValue.Number(DlmsType.UInt32, 100));
         await client.ActionAsync(CosemClassIds.Register, register.LogicalName, RegisterMembers.Methods.Reset,
             DlmsValue.Number(DlmsType.Int8, 0));
-        var imported = await client.LoadCatalogAsync(builder.CreateImporter(), "remote-meter", BlueBook16Profile.Id,
+        var imported = await client.LoadCatalogAsync(builder.CreateImporter(), "remote-meter",
             "public", AssociationLnMembers.Version3);
         Console.WriteLine($"Client imported catalog: {imported.Catalog.Objects.Length} objects");
         await client.ReleaseAsync();

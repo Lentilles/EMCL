@@ -45,7 +45,7 @@ public sealed class EmclDevice(ObjectCatalog catalog, ClassRegistry definitions,
     /// <returns>The object registered in the logical-device catalog.</returns>
     public CosemObject Add(ushort classId, byte version, LogicalName logicalName)
     {
-        var key = new ClassKey(Catalog.ProfileId, classId, version);
+        var key = new ClassKey(classId, version);
         var descriptor = Definitions.Find(key) ?? new(key, $"Unknown class {classId} v{version}", [], [], false);
         var obj = factory.Create(descriptor, logicalName);
         Catalog.Add(obj);

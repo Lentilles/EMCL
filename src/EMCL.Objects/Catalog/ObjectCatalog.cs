@@ -4,16 +4,13 @@ using EMCL.Core.Objects;
 
 namespace EMCL.Objects.Catalog;
 
-/// <summary>Maintains the object instances of one logical device and enforces profile and class-version consistency.</summary>
+/// <summary>Maintains the object instances of one logical device and enforces class-version consistency.</summary>
 /// <param name="logicalDeviceId">The caller-defined logical-device identity.</param>
-/// <param name="profileId">The standard-profile identifier, including its edition.</param>
-public sealed class ObjectCatalog(string logicalDeviceId, string profileId)
+public sealed class ObjectCatalog(string logicalDeviceId)
 {
     private readonly Dictionary<LogicalName, CosemObject> objects = [];
     /// <summary>Gets the identity used to isolate operations for this logical device.</summary>
     public string LogicalDeviceId { get; } = logicalDeviceId;
-    /// <summary>Gets the standard-profile identifier required by every object in the catalog.</summary>
-    public string ProfileId { get; } = profileId;
 
     /// <summary>Gets an immutable snapshot of the currently registered object instances.</summary>
     public ImmutableArray<CosemObject> Objects
@@ -38,18 +35,13 @@ public sealed class ObjectCatalog(string logicalDeviceId, string profileId)
         }
     }
 
-    /// <summary>Adds an object after checking its profile, unique logical name, and class-version consistency.</summary>
+    /// <summary>Adds an object after checking its unique logical name and class-version consistency.</summary>
     /// <param name="cosemObject">The resolved object instance.</param>
-    /// <exception cref="ArgumentException">The profile, logical name, or class version conflicts with the existing catalog.</exception>
+    /// <exception cref="ArgumentException">The logical name or class version conflicts with the existing catalog.</exception>
     public void Add(CosemObject cosemObject)
     {
         lock (objects)
         {
-            if (cosemObject.Descriptor.Key.ProfileId != ProfileId)
-            {
-                throw new ArgumentException("Profile does not match the logical device.");
-            }
-
             if (objects.ContainsKey(cosemObject.LogicalName))
             {
                 throw new ArgumentException($"Duplicate logical name {cosemObject.LogicalName}.");

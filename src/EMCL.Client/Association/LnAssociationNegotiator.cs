@@ -27,8 +27,8 @@ public sealed class LnAssociationNegotiator : IClientAssociationNegotiator, ICli
     {
         ArgumentNullException.ThrowIfNull(proposal);
         proposal.Validate();
-        var initiate = new InitiateRequest([], true, null, DlmsNegotiation.Version6,
-            (uint)proposal.Conformance, proposal.MaxReceivePduSize);
+        var initiate = new InitiateRequest([], proposal.ResponseAllowed, null, DlmsNegotiation.Version6,
+            (uint)(proposal.AdvertisedConformance ?? proposal.Conformance), proposal.MaxReceivePduSize);
         var authenticationValue = proposal.Authentication == ClientAuthentication.High
             ? HighAesAuthentication.NewChallenge()
             : proposal.Password.IsDefault ? [] : proposal.Password.ToArray();
@@ -55,7 +55,7 @@ public sealed class LnAssociationNegotiator : IClientAssociationNegotiator, ICli
                 AcseFieldTags.DiagnosticServiceProvider => Enum.GetName((AcseServiceProviderDiagnostic)diagnostic.Code) ?? "Unknown",
                 _ => "Unknown"
             };
-            throw new DlmsAssociationException($"Association rejected: result={response.Result?.ToString() ?? "missing"}, "
+            throw new DlmsAssociationException($"stage=AARE; association rejected: result={response.Result?.ToString() ?? "missing"}, "
                 + $"diagnostic={diagnostic?.Code.ToString() ?? "missing"} ({reason}).", response);
         }
 
@@ -77,14 +77,20 @@ public sealed class LnAssociationNegotiator : IClientAssociationNegotiator, ICli
         }
 
         var conformance = (DlmsConformance)initiate.Conformance;
+        var unexpected = conformance & ~(proposal.AdvertisedConformance ?? proposal.Conformance);
+        if (proposal.AcceptUnexpectedBlockTransferWithSet)
+        {
+            unexpected &= ~DlmsConformance.BlockTransferWithSet;
+        }
         if (initiate.DlmsVersion != DlmsNegotiation.Version6 || initiate.VaaName != DlmsNegotiation.LogicalNameVaa
-            || (conformance & ~proposal.Conformance) != DlmsConformance.None
+            || unexpected != DlmsConformance.None
             || initiate.MaxReceivePduSize != DlmsNegotiation.UnlimitedPduSize && initiate.MaxReceivePduSize < DlmsNegotiation.MinimumPduSize)
         {
             throw new DlmsAssociationException("The negotiated version, LN VAA, conformance, or PDU size is incompatible with the proposal.", response);
         }
 
-        return new(initiate.DlmsVersion, conformance, initiate.MaxReceivePduSize, proposal.MaxReceivePduSize);
+        return new(initiate.DlmsVersion, conformance & proposal.Conformance,
+            initiate.MaxReceivePduSize, proposal.MaxReceivePduSize);
     }
 
     /// <inheritdoc />

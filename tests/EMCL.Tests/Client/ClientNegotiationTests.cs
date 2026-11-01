@@ -11,6 +11,7 @@ using EMCL.Objects.Definitions;
 using EMCL.Protocol.Acse;
 using EMCL.Protocol.Apdu;
 using EMCL.Tests.Support;
+using EMCL.Transport.Channels;
 
 namespace EMCL.Tests.Client;
 
@@ -97,9 +98,83 @@ public sealed class ClientNegotiationTests
         await using var peer = new SessionPeer(pair.Server);
         await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options());
         var request = await peer.AssociateAsync(client);
-        AssertBytesEqual(FromHex("0100010100065F1F040000109D0400"), request.UserInformation!.Value.AsSpan());
+        AssertBytesEqual(FromHex("01000000065F1F040000109D0400"), request.UserInformation!.Value.AsSpan());
         AssertBytesEqual(FromHex("60857405080101"), request.ApplicationContext!.Value.AsSpan());
         await peer.ReleaseAsync(client);
+    }
+
+    [Fact]
+    public async Task CanExplicitlyIncludeResponseAllowedWhenRequested()
+    {
+        var pair = DuplexApduChannel.CreatePair();
+        await using var peer = new SessionPeer(pair.Server);
+        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
+        {
+            Association = new LnAssociationOptions { ResponseAllowed = true }
+        });
+        var request = await peer.AssociateAsync(client);
+        AssertBytesEqual(FromHex("0100010100065F1F040000109D0400"), request.UserInformation!.Value.AsSpan());
+        await peer.ReleaseAsync(client);
+    }
+
+    [Fact]
+    public void CanAdvertiseObservedFullConformanceWhileRetainingImplementedServiceSubset()
+    {
+        var observedServices = DlmsConformance.GeneralProtection | DlmsConformance.GeneralBlockTransfer
+            | DlmsConformance.DeltaValueEncoding | DlmsConformance.BlockTransferWithGet
+            | DlmsConformance.BlockTransferWithSet | DlmsConformance.BlockTransferWithAction
+            | DlmsConformance.MultipleReferences | DlmsConformance.DataNotification
+            | DlmsConformance.Access | DlmsConformance.Get | DlmsConformance.Set
+            | DlmsConformance.SelectiveAccess | DlmsConformance.EventNotification | DlmsConformance.Action;
+        Assert.Equal((DlmsConformance)0x621EDF, observedServices);
+
+        var proposal = new LnAssociationOptions
+        {
+            Conformance = DlmsConformance.Get | DlmsConformance.Action | DlmsConformance.BlockTransferWithGet,
+            AdvertisedConformance = observedServices,
+            MaxReceivePduSize = ushort.MaxValue
+        };
+        var negotiator = new LnAssociationNegotiator();
+        var request = negotiator.CreateRequest(proposal);
+        AssertBytesEqual(FromHex("01000000065F1F0400621EDFFFFF"), request.UserInformation!.Value.AsSpan());
+
+        var response = AcseApdu.Aare(new ApduCodec().EncodeBytes(new InitiateResponse(null,
+            DlmsNegotiation.Version6, 0x001010, 2048)));
+        var negotiated = negotiator.AcceptResponse(response, proposal);
+        Assert.Equal(DlmsConformance.Get | DlmsConformance.BlockTransferWithGet, negotiated.Conformance);
+    }
+
+    [Fact]
+    public async Task ExplicitlyPermittedUnexpectedSetBlockBitIsNotExposedAsImplemented()
+    {
+        var pair = DuplexApduChannel.CreatePair();
+        await using var peer = new SessionPeer(pair.Server);
+        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
+        {
+            Association = new LnAssociationOptions { AcceptUnexpectedBlockTransferWithSet = true }
+        });
+        var request = await peer.AssociateAsync(client, (DlmsConformance)0x00189D, serverPdu: 2048);
+        Assert.NotNull(request);
+        Assert.Equal((DlmsConformance)0x00109D, client.NegotiatedParameters!.Conformance);
+        await peer.ReleaseAsync(client);
+    }
+
+    [Fact]
+    public async Task AssociationRetrySettingNeverRetriesGet()
+    {
+        var pair = DuplexApduChannel.CreatePair();
+        await using var peer = new SessionPeer(pair.Server);
+        var channel = new RetryCountingChannel(pair.Client);
+        await using var client = new DlmsClientSession(channel, SessionPeer.Options() with
+        {
+            AssociationRetryDelay = TimeSpan.FromMilliseconds(20),
+            RequestTimeout = TimeSpan.FromMilliseconds(200)
+        });
+        await peer.AssociateAsync(client);
+        var reading = SessionPeer.GetAsync(client, TestContext.Current.CancellationToken).AsTask();
+        await peer.ReadAsync<LnRequest>();
+        await Assert.ThrowsAsync<TimeoutException>(async () => await reading);
+        Assert.Equal(0, channel.RetryCount);
     }
 
     [Theory]
@@ -110,6 +185,7 @@ public sealed class ClientNegotiationTests
     [InlineData(0, 0, 6, 7, 11, 1, 0x109d)]
     [InlineData(0, 0, 6, 7, 1024, 2, 0x109d)]
     [InlineData(0, 0, 6, 7, 1024, 1, 0x109f)]
+    [InlineData(0, 0, 6, 7, 1024, 1, 0x189d)]
     public async Task RejectsIncompatibleAareAndRetainsItsDiagnostics(byte result, byte diagnostic,
         byte version, ushort vaa, ushort pdu, byte context, uint conformance)
     {
@@ -229,6 +305,21 @@ public sealed class ClientNegotiationTests
             Encoded++;
             inner.Encode(value, output);
         }
+    }
+
+    private sealed class RetryCountingChannel(IApduChannel inner) : IApduChannel, IAssociationRequestRetransmission
+    {
+        public int RetryCount { get; private set; }
+        public ValueTask<ReadOnlyMemory<byte>?> ReceiveAsync(CancellationToken cancellationToken = default) =>
+            inner.ReceiveAsync(cancellationToken);
+        public ValueTask SendAsync(ReadOnlyMemory<byte> apdu, CancellationToken cancellationToken = default) =>
+            inner.SendAsync(apdu, cancellationToken);
+        public ValueTask<bool> RetryUnansweredAssociationRequestAsync(CancellationToken cancellationToken = default)
+        {
+            RetryCount++;
+            return ValueTask.FromResult(false);
+        }
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
     }
 
     private sealed class CustomNegotiator : IClientAssociationNegotiator

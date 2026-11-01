@@ -18,7 +18,7 @@ public sealed class RegisterObjectsTests
     [InlineData("C001C100060100010800FF0200", "C401C1000100", 6)]
     public async Task ExecutesReferenceApdusAgainstNewHandlers(string requestHex, string responseHex, ushort classId)
     {
-        var device = new EmclBuilder().Build("meter", BlueBook16Profile.Id);
+        var device = new EmclBuilder().Build("meter");
         var register = device.Add(classId, 0, LogicalName.Parse("1.0.1.8.0.255"));
         if (classId is 4 or 5)
         {
@@ -37,12 +37,10 @@ public sealed class RegisterObjectsTests
         }
     }
 
-    [Theory]
-    [InlineData(BlueBook16Profile.Id)]
-    [InlineData(Spodes4Profile.Id)]
-    public async Task CapturesNewRegisterValuesAndTimestampsIntoProfileGeneric(string profile)
+    [Fact]
+    public async Task CapturesNewRegisterValuesAndTimestampsIntoProfileGeneric()
     {
-        var device = new EmclBuilder().Build("meter", profile);
+        var device = new EmclBuilder().Build("meter");
         var extended = device.Add(4, 0, LogicalName.Parse("1.0.1.8.0.255"));
         var demand = device.Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
         var buffer = device.Add(7, 1, LogicalName.Parse("1.0.99.1.0.255"));

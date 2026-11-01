@@ -21,14 +21,14 @@ namespace EMCL.Tests.Client;
 public sealed class ClientSessionTests
 {
     [Theory]
-    [InlineData(false, BlueBook16Profile.Id, 3)]
-    [InlineData(true, Spodes4Profile.Id, 1)]
-    public async Task RunsAssociationOperationsCatalogImportAndReleaseAgainstLocalPipeline(bool wrapper, string profile, byte version)
+    [InlineData(false, 3)]
+    [InlineData(true, 1)]
+    public async Task RunsAssociationOperationsCatalogImportAndReleaseAgainstLocalPipeline(bool wrapper, byte version)
     {
         var pair = CreatePair(wrapper);
         await using var peer = new SessionPeer(pair.Server);
         await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options());
-        var device = new EmclBuilder().Build("server", profile);
+        var device = new EmclBuilder().Build("server");
         var register = device.Add(CosemClassIds.Register, RegisterMembers.Version0, SessionPeer.RegisterName);
         register.State.Set(RegisterMembers.Attributes.Value, Number(DlmsType.UInt32, 42));
         var association = device.Add(CosemClassIds.AssociationLn, version, LogicalName.Parse("0.0.40.0.0.255"));
@@ -48,7 +48,7 @@ public sealed class ClientSessionTests
         Assert.Null(await client.ActionAsync(CosemClassIds.Register, register.LogicalName, RegisterMembers.Methods.Reset,
             Number(DlmsType.Int8, 0), TestContext.Current.CancellationToken));
         Assert.Equal(0UL, (await SessionPeer.GetAsync(client, TestContext.Current.CancellationToken)).AsUInt64());
-        var imported = await client.LoadCatalogAsync(new EmclBuilder().CreateImporter(), "imported", profile, "public", version,
+        var imported = await client.LoadCatalogAsync(new EmclBuilder().CreateImporter(), "imported", "public", version,
             cancellationToken: TestContext.Current.CancellationToken);
         var importedRegister = Assert.Single(imported.Catalog.Objects);
         Assert.True(importedRegister.Descriptor.IsKnown);

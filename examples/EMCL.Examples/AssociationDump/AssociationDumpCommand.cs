@@ -1,4 +1,3 @@
-using System.Net.Sockets;
 using EMCL.Client.Association;
 using EMCL.Client.Sessions;
 using EMCL.Composition;
@@ -7,14 +6,10 @@ using EMCL.Examples.AssociationDump.Configuration;
 using EMCL.Examples.AssociationDump.Export;
 using EMCL.Examples.AssociationDump.Import;
 using EMCL.Examples.AssociationDump.Logging;
-using EMCL.Examples.AssociationDump.Transport;
 using EMCL.Framing;
-using EMCL.Framing.Hdlc.Frames;
-using EMCL.Framing.Wrapper;
 using EMCL.Objects.Association;
 using EMCL.Objects.Definitions;
 using EMCL.Transport.Channels;
-using EMCL.Transport.Streams;
 
 namespace EMCL.Examples.AssociationDump;
 
@@ -24,48 +19,29 @@ internal static class AssociationDumpCommand
         CancellationToken cancellationToken)
     {
         var configuration = await ConfigurationFile.LoadAsync(configurationPath, cancellationToken);
-        var connection = configuration.Settings.Connection;
-        string connectionDetails = connection.Transport == MeterTransport.WrapperTcp
-            ? $"Wrapper/TCP (source={connection.ClientWrapperPort}, destination={connection.ServerWrapperPort})"
-            : $"HDLC/TCP (client={connection.HdlcClientAddress}, server logical={connection.HdlcServerLogicalAddress}, "
-                + $"physical={connection.HdlcServerPhysicalAddress?.ToString() ?? "none"})";
-        output.WriteLine($"Connecting to {connection.Host}:{connection.TcpPort} using {connectionDetails}...");
-        using var tcp = new TcpClient();
-        using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+        var connection = configuration.Settings.Channel.Connection;
+        var framing = configuration.Settings.Channel.Framing;
+        string connectionDetails = framing switch
         {
-            deadline.CancelAfter(configuration.ConnectTimeout);
-            try
-            {
-                await tcp.ConnectAsync(connection.Host, connection.TcpPort, deadline.Token);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException("The TCP connection deadline expired.");
-            }
-        }
-
-        // The TCP client owns the stream; dispose the session before closing the socket.
-        var byteTransport = new StreamByteTransport(tcp.GetStream(), leaveOpen: true);
-        bool redactAarq = configuration.Settings.Association.Authentication != ClientAuthentication.None;
-        await using IApduChannel channel = connection.Transport switch
-        {
-            MeterTransport.WrapperTcp => new TracingApduChannel(
-                new FramedApduChannel<WrapperFrame>(byteTransport, new WrapperCodec(configuration.Settings.Limits),
-                    new WrapperApduAdapter(connection.ClientWrapperPort, connection.ServerWrapperPort), configuration.Settings.Limits),
-                output, redactAarq),
-            MeterTransport.HdlcTcp => await HdlcTcpApduChannel.ConnectAsync(byteTransport,
-                HdlcAddress.Client(connection.HdlcClientAddress),
-                HdlcAddress.Server(connection.HdlcServerLogicalAddress, connection.HdlcServerPhysicalAddress,
-                    connection.HdlcExtendedAddress), configuration.Settings.Limits, configuration.Session.RequestTimeout,
-                output, redactAarq, cancellationToken),
-            _ => throw new InvalidOperationException("Unsupported meter transport.")
+            WrapperFramingSettings wrapper => $"Wrapper/TCP (source={wrapper.ClientPort}, destination={wrapper.ServerPort})",
+            HdlcFramingSettings hdlc => $"HDLC/TCP (client={hdlc.ClientAddress}, server logical={hdlc.ServerLogicalAddress}, "
+                + $"physical={hdlc.ServerPhysicalAddress?.ToString() ?? "none"}, "
+                + $"server address bytes={(hdlc.ServerPhysicalAddress is null ? 1 : hdlc.ExtendedAddress ? 4 : 2)})",
+            _ => throw new InvalidOperationException("Unsupported channel framing.")
         };
+        await output.WriteLineAsync($"Connecting to {connection.Host}:{connection.TcpPort} using {connectionDetails}...");
+        bool redactAuthenticationData = configuration.Settings.Association.Authentication != ClientAuthentication.None;
+        var channelSettings = configuration.CreateChannelSettings(new HdlcFrameTracer(output, redactAuthenticationData).Log);
+        IApduChannel opened = await ApduChannels.ConnectAsync(channelSettings, cancellationToken);
+        await using IApduChannel channel = framing is WrapperFramingSettings
+            ? new TracingApduChannel(opened, output, redactAuthenticationData)
+            : opened;
         await using var client = new DlmsClientSession(channel, configuration.Session with
         {
             LeaveOpen = true
         });
         var negotiated = await client.AssociateAsync(cancellationToken);
-        output.WriteLine("Association established. Reading object_list...");
+        await output.WriteLineAsync("Association established. Reading object_list...");
         var association = configuration.Settings.Association;
         var importer = new EmclBuilder { Limits = configuration.Settings.Limits }.CreateImporter();
         ImportedAssociation imported;
@@ -76,22 +52,22 @@ internal static class AssociationDumpCommand
                 AssociationLnMembers.Attributes.ObjectList, cancellationToken: cancellationToken);
             var filtered = IdenticalObjectListDuplicateFilter.Apply(list, configuration.Settings.Limits);
             warnings = filtered.Warnings;
-            imported = importer.Import(filtered.Value, association.LogicalDeviceId, association.ProfileId,
+            imported = importer.Import(filtered.Value, association.LogicalDeviceId,
                 association.AssociationId, association.Version);
         }
         else
         {
-            imported = await client.LoadCatalogAsync(importer, association.LogicalDeviceId, association.ProfileId,
+            imported = await client.LoadCatalogAsync(importer, association.LogicalDeviceId,
                 association.AssociationId, association.Version, configuration.AssociationName, cancellationToken);
         }
 
         var document = AssociationDocumentFactory.Create(imported, configuration, negotiated, DateTimeOffset.UtcNow,
             warnings);
         await AssociationJsonFile.WriteAsync(configuration.OutputPath, document, configuration.Settings.Output.Overwrite, cancellationToken);
-        output.WriteLine($"Saved {document.ObjectCount} objects to {configuration.OutputPath}");
+        await output.WriteLineAsync($"Saved {document.ObjectCount} objects to {configuration.OutputPath}");
         foreach (string warning in warnings)
         {
-            error.WriteLine(warning);
+            await error.WriteLineAsync(warning);
         }
 
         try
@@ -101,7 +77,7 @@ internal static class AssociationDumpCommand
         catch (Exception releaseError) when (releaseError is IOException or TimeoutException or InvalidOperationException)
         {
             // A completed export remains usable even if the meter does not confirm RLRQ.
-            error.WriteLine($"The JSON file was saved, but association release failed: {releaseError.Message}");
+            await error.WriteLineAsync($"The JSON file was saved, but association release failed: {releaseError.Message}");
         }
     }
 }

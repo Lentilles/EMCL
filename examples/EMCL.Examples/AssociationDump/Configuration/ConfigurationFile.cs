@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -7,8 +8,6 @@ using EMCL.Client.Sessions;
 using EMCL.Core.Objects;
 using EMCL.Framing.Hdlc.Frames;
 using EMCL.Objects.Definitions;
-using EMCL.Profiles.BlueBook;
-using EMCL.Profiles.Spodes;
 using EMCL.Protocol.Apdu;
 
 namespace EMCL.Examples.AssociationDump.Configuration;
@@ -32,8 +31,14 @@ internal static class ConfigurationFile
     {
         string configurationPath = Path.GetFullPath(path);
         await using var file = File.OpenRead(configurationPath);
-        var settings = await JsonSerializer.DeserializeAsync<MeterConfiguration>(file, JsonOptions, cancellationToken)
-            ?? throw new ArgumentException("The configuration must contain a JSON object.");
+        using var document = await JsonDocument.ParseAsync(file, cancellationToken: cancellationToken);
+        var settings = document.RootElement.TryGetProperty("connection", out _)
+            ? document.RootElement.Deserialize<LegacyMeterConfiguration>(JsonOptions)?.Upgrade()
+            : document.RootElement.Deserialize<MeterConfiguration>(JsonOptions);
+        if (settings is null)
+        {
+            throw new ArgumentException("The configuration must contain a JSON object.");
+        }
         var loaded = Validate(settings, Path.GetDirectoryName(configurationPath)!);
         if (string.Equals(configurationPath, loaded.OutputPath, StringComparison.OrdinalIgnoreCase))
         {
@@ -45,46 +50,44 @@ internal static class ConfigurationFile
 
     internal static LoadedConfiguration Validate(MeterConfiguration settings, string directory)
     {
-        ArgumentNullException.ThrowIfNull(settings.Connection);
+        ArgumentNullException.ThrowIfNull(settings.Channel);
+        ArgumentNullException.ThrowIfNull(settings.Channel.Connection);
+        ArgumentNullException.ThrowIfNull(settings.Channel.Framing);
         ArgumentNullException.ThrowIfNull(settings.Association);
         ArgumentNullException.ThrowIfNull(settings.Output);
         ArgumentNullException.ThrowIfNull(settings.Limits);
         settings.Limits.Validate();
-        ArgumentException.ThrowIfNullOrWhiteSpace(settings.Connection.Host);
-        if (settings.Connection.TcpPort is <= 0 or > ushort.MaxValue)
+        var connection = settings.Channel.Connection;
+        ArgumentException.ThrowIfNullOrWhiteSpace(connection.Host);
+        if (connection.TcpPort is <= 0 or > ushort.MaxValue)
         {
-            throw new ArgumentException("connection.tcpPort must be a valid nonzero TCP port.");
+            throw new ArgumentException("channel.connection.tcpPort must be a valid nonzero TCP port.");
         }
 
-        switch (settings.Connection.Transport)
+        switch (settings.Channel.Framing)
         {
-            case MeterTransport.WrapperTcp:
-                if (settings.Connection.ClientWrapperPort == 0 || settings.Connection.ServerWrapperPort == 0)
+            case WrapperFramingSettings wrapper:
+                if (wrapper.ClientPort == 0 || wrapper.ServerPort == 0)
                 {
                     throw new ArgumentException("Wrapper source and destination ports must be nonzero.");
                 }
 
                 break;
-            case MeterTransport.HdlcTcp:
-                _ = HdlcAddress.Client(settings.Connection.HdlcClientAddress);
-                _ = HdlcAddress.Server(settings.Connection.HdlcServerLogicalAddress,
-                    settings.Connection.HdlcServerPhysicalAddress, settings.Connection.HdlcExtendedAddress);
-                if (settings.Connection.HdlcExtendedAddress && !settings.Connection.HdlcServerPhysicalAddress.HasValue)
+            case HdlcFramingSettings hdlc:
+                _ = HdlcAddress.Client(hdlc.ClientAddress);
+                _ = HdlcAddress.Server(hdlc.ServerLogicalAddress, hdlc.ServerPhysicalAddress,
+                    hdlc.ExtendedAddress);
+                if (hdlc.ExtendedAddress && !hdlc.ServerPhysicalAddress.HasValue)
                 {
-                    throw new ArgumentException("connection.hdlcExtendedAddress requires hdlcServerPhysicalAddress.");
+                    throw new ArgumentException("channel.framing.extendedAddress requires serverPhysicalAddress.");
                 }
 
                 break;
             default:
-                throw new ArgumentException("connection.transport must be WrapperTcp or HdlcTcp.");
+                throw new ArgumentException("channel.framing.kind must be Wrapper or Hdlc.");
         }
 
         var association = settings.Association;
-        if (association.ProfileId is not (BlueBook16Profile.Id or Spodes4Profile.Id))
-        {
-            throw new ArgumentException("association.profileId must be BlueBook.Ed16 or Spodes.4.");
-        }
-
         if (association.Version is not (AssociationLnMembers.Version1 or AssociationLnMembers.Version3))
         {
             throw new ArgumentException("association.version must explicitly select Association LN version 1 or 3.");
@@ -113,6 +116,13 @@ internal static class ConfigurationFile
             throw new ArgumentException("association.conformance must include Action for High authentication.");
         }
 
+        DlmsConformance? advertisedConformance = ParseAdvertisedConformance(association.AdvertisedConformanceHex);
+        if (advertisedConformance is { } advertised
+            && (association.Conformance & ~advertised) != DlmsConformance.None)
+        {
+            throw new ArgumentException("association.advertisedConformanceHex must include every service in association.conformance.");
+        }
+
         ArgumentException.ThrowIfNullOrWhiteSpace(settings.Output.Path);
         var outputPath = Path.GetFullPath(settings.Output.Path, directory);
         if (Directory.Exists(outputPath))
@@ -139,13 +149,14 @@ internal static class ConfigurationFile
             Association = new()
             {
                 Conformance = association.Conformance,
+                AdvertisedConformance = advertisedConformance,
                 MaxReceivePduSize = association.MaxReceivePduSize,
                 Authentication = association.Authentication,
                 Password = password
             }
         };
-        return new(settings, session, name, Timeout(settings.Connection.ConnectTimeoutSeconds,
-            "connection.connectTimeoutSeconds"), outputPath);
+        return new(settings, session, name, Timeout(connection.ConnectTimeoutSeconds,
+            "channel.connection.connectTimeoutSeconds"), outputPath);
     }
 
     private static TimeSpan Timeout(double seconds, string parameter)
@@ -156,6 +167,28 @@ internal static class ConfigurationFile
         }
 
         return TimeSpan.FromSeconds(seconds);
+    }
+
+    private static DlmsConformance? ParseAdvertisedConformance(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        ReadOnlySpan<char> hex = value.AsSpan().Trim();
+        if (hex.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            hex = hex[2..];
+        }
+
+        if (hex.IsEmpty || hex.Length > 6
+            || !uint.TryParse(hex, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out uint bits))
+        {
+            throw new ArgumentException("association.advertisedConformanceHex must be a 1–6 digit hexadecimal value.");
+        }
+
+        return (DlmsConformance)bits;
     }
 
     private static ImmutableArray<byte> Password(AssociationSettings settings)

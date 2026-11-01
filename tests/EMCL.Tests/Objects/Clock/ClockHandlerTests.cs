@@ -3,7 +3,6 @@ using EMCL.Core.Objects;
 using EMCL.Core.Operations;
 using EMCL.Core.Values;
 using EMCL.Objects.Clock;
-using EMCL.Profiles.BlueBook;
 using EMCL.Tests.Support;
 
 namespace EMCL.Tests.Objects.Clock;
@@ -18,7 +17,7 @@ public sealed class ClockHandlerTests
         {
             ClockFactory = () => source
         };
-        var d = b.Build("d", BlueBook16Profile.Id);
+        var d = b.Build("d");
         var clock = d.Add(8, 0, LogicalName.Parse("0.0.1.0.0.255"));
         Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(d, clock, CosemOperationKind.Invoke, 3, Number(DlmsType.Int8, 0))).Error);
         Assert.Equal(35, source.GetTime(clock.LogicalName).Minute);

@@ -7,7 +7,7 @@ using EMCL.Objects.Handlers;
 
 namespace EMCL.Objects.Registers;
 
-/// <summary>Executes Extended Register v0 reset and application-driven value capture with profile-specific timestamps.</summary>
+/// <summary>Executes Extended Register v0 reset and application-driven value capture with configurable timestamps.</summary>
 public sealed class ExtendedRegisterHandler : StoredValueHandler
 {
     private readonly TimeProvider timeProvider;
@@ -28,7 +28,7 @@ public sealed class ExtendedRegisterHandler : StoredValueHandler
     /// <summary>Captures a local measurement and its execution time, optionally replacing status.</summary>
     /// <remarks>This producer-side API bypasses association access checks and serializes against dispatcher operations. A null status preserves the existing status; null-data explicitly replaces it.</remarks>
     /// <param name="cosemObject">An Extended Register v0 instance.</param>
-    /// <param name="value">The measurement value permitted by the selected profile.</param>
+    /// <param name="value">The measurement value permitted by the class definition.</param>
     /// <param name="status">An optional register status to capture.</param>
     /// <param name="cancellationToken">A token requesting cancellation.</param>
     /// <returns>The capture result; validation failures preserve the previous measurement.</returns>

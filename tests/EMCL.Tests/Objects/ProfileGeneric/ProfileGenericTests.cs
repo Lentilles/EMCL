@@ -2,7 +2,6 @@ using EMCL.Composition;
 using EMCL.Core.Objects;
 using EMCL.Core.Operations;
 using EMCL.Core.Values;
-using EMCL.Profiles.BlueBook;
 
 namespace EMCL.Tests.Objects.ProfileGeneric;
 
@@ -11,7 +10,7 @@ public sealed class ProfileGenericTests
     [Fact]
     public async Task CapturesSelectsAndResetsBuffers()
     {
-        var d = new EmclBuilder().Build("d", BlueBook16Profile.Id);
+        var d = new EmclBuilder().Build("d");
         var r = d.Add(3, 0, LogicalName.Parse("1.0.1.8.0.255"));
         var p = d.Add(7, 1, LogicalName.Parse("1.0.99.1.0.255"));
         var definition = CaptureDefinition(r);

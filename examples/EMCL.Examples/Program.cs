@@ -22,7 +22,7 @@ internal static class Program
           dotnet run --project examples/EMCL.Examples -- --config /path/to/meter.json
 
         Output paths are resolved relative to the configuration file.
-        Profile and Association LN version must be explicitly selected.
+        Association LN version must be explicitly selected.
         None and Low authentication are supported.
 
         Run the local, offline demonstrations:

@@ -7,6 +7,54 @@ namespace EMCL.Tests.Framing;
 public sealed class HdlcCodecTests
 {
     [Fact]
+    public void ExtendedServerAddressEncodesObservedSnrm()
+    {
+        var frame = new HdlcFrame(HdlcAddress.Server(1, 17, extended: true),
+            HdlcAddress.Client(48), HdlcControl.Snrm, []);
+        var codec = new HdlcCodec();
+
+        Assert.Equal("7EA00A0002002361937E377E", Convert.ToHexString(codec.EncodeBytes(frame)));
+    }
+
+    [Fact]
+    public void ObservedUaFramesHaveSameLogicalAndPhysicalServerAddresses()
+    {
+        var codec = new HdlcCodec();
+        var fourByteUa = DecodeComplete(codec, FromHex("7EA00A6100020023739DE57E"));
+        var twoByteUa = DecodeComplete(codec, FromHex("7EA00861022373CD557E"));
+
+        Assert.Equal(HdlcControl.Ua, fourByteUa.Control);
+        Assert.Equal(HdlcControl.Ua, twoByteUa.Control);
+        Assert.Equal(HdlcAddress.Client(48), fourByteUa.Destination);
+        Assert.Equal(fourByteUa.Destination, twoByteUa.Destination);
+        Assert.Equal(HdlcAddress.Server(1, 17, extended: true), fourByteUa.Source);
+        Assert.Equal(HdlcAddress.Server(1, 17), twoByteUa.Source);
+        Assert.True(fourByteUa.Source.HasSameServerComponents(twoByteUa.Source));
+        Assert.Empty(fourByteUa.Information);
+        Assert.Empty(twoByteUa.Information);
+    }
+
+    [Fact]
+    public void ValidAareFrameHeaderDecodesAndBadClosingFlagReportsBoundary()
+    {
+        var codec = new HdlcCodec();
+        var information = new byte[79];
+        new byte[] { 0xe6, 0xe7, 0, 0x61, 0x4a }.CopyTo(information, 0);
+        byte[] frame = codec.EncodeBytes(new(HdlcAddress.Client(48), HdlcAddress.Server(1, 17),
+            0x30, information.ToImmutableArray()));
+
+        Assert.StartsWith("7EA05961022330745BE6E700614A", Convert.ToHexString(frame));
+        Assert.Equal(DecodeStatus.Done, codec.Decode(new(frame)).Status);
+
+        frame[^1] = 0;
+        var malformed = codec.Decode(new(frame));
+        Assert.Equal(DecodeStatus.InvalidData, malformed.Status);
+        Assert.Contains("declared length 89", malformed.Error);
+        Assert.Contains("offset 90", malformed.Error);
+        Assert.Contains("found 00", malformed.Error);
+    }
+
+    [Fact]
     public void ValidatesAddressesChecksumsAndSegmentation()
     {
         Assert.Equal((ushort)0x906e, HdlcChecksum.Compute(Encoding.ASCII.GetBytes("123456789")));

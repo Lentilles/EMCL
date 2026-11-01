@@ -4,5 +4,5 @@ internal sealed record AssociationDocument(int SchemaVersion, DateTimeOffset Exp
     AssociationSource Source, NegotiationDocument Negotiated, int ObjectCount, IReadOnlyList<ObjectDocument> Objects,
     IReadOnlyList<string> Warnings)
 {
-    internal const int CurrentSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 3;
 }

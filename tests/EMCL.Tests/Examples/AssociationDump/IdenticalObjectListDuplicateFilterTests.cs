@@ -14,7 +14,7 @@ public sealed class IdenticalObjectListDuplicateFilterTests
     public void RemovesOnlyByteIdenticalEntriesBeforeStrictImport()
     {
         var builder = new EmclBuilder();
-        var device = builder.Build("meter", BlueBook16Profile.Id);
+        var device = builder.Build("meter");
         var obj = device.Add(CosemClassIds.Register, RegisterMembers.Version0,
             LogicalName.Parse("1.0.91.7.131.255"));
         var first = AssociationHandler.Entry(obj, new ObjectAccessRights(
@@ -26,13 +26,13 @@ public sealed class IdenticalObjectListDuplicateFilterTests
         Assert.Single(filtered.Value.Items);
         Assert.Single(filtered.Warnings);
         Assert.Contains(obj.LogicalName.ToString(), filtered.Warnings[0], StringComparison.Ordinal);
-        Assert.Single(builder.CreateImporter().Import(filtered.Value, "meter", BlueBook16Profile.Id,
+        Assert.Single(builder.CreateImporter().Import(filtered.Value, "meter",
             "public", AssociationLnMembers.Version3).Catalog.Objects);
 
         var conflicting = IdenticalObjectListDuplicateFilter.Apply(DlmsValue.Array(first, different), new());
         Assert.Equal(2, conflicting.Value.Items.Length);
         Assert.Empty(conflicting.Warnings);
         Assert.Throws<AssociationImportException>(() => builder.CreateImporter().Import(conflicting.Value,
-            "meter", BlueBook16Profile.Id, "public", AssociationLnMembers.Version3));
+            "meter", "public", AssociationLnMembers.Version3));
     }
 }

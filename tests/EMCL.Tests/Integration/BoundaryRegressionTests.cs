@@ -4,7 +4,6 @@ using EMCL.Core.Objects;
 using EMCL.Core.Operations;
 using EMCL.Core.Values;
 using EMCL.Objects.Handlers;
-using EMCL.Profiles.BlueBook;
 using EMCL.Protocol.Acse;
 using EMCL.Protocol.Apdu;
 using EMCL.Protocol.Axdr;
@@ -31,7 +30,7 @@ public sealed class BoundaryRegressionTests
             MaxMessageBytes = 4
         });
         Assert.Throws<ArgumentException>(() => limited.EncodeBytes(DlmsValue.Octets([1, 2, 3, 4])));
-        var d = new EmclBuilder().Build("d", BlueBook16Profile.Id);
+        var d = new EmclBuilder().Build("d");
         var r = d.Add(3, 0, LogicalName.Parse("1.0.1.8.0.255"));
         r.State.Set(2, Number(DlmsType.UInt32, 8));
         var original = d.Handlers.Resolve("d", r);

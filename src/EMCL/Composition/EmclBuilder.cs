@@ -9,13 +9,12 @@ using EMCL.Objects.Clock;
 using EMCL.Objects.Processing;
 using EMCL.Objects.ProfileGeneric;
 using EMCL.Objects.Registers;
-using EMCL.Profiles.BlueBook;
-using EMCL.Profiles.Spodes;
+using EMCL.Objects.Definitions;
 
 namespace EMCL.Composition;
 
 /// <summary>Composes standard definitions, local handlers, and an overridable operation pipeline for a logical device.</summary>
-/// <remarks>Configure the builder and registries before concurrent use. The built-in profiles register independent local handler instances.</remarks>
+/// <remarks>Configure the builder and registries before concurrent use. Standard handlers are independent for each device.</remarks>
 public sealed class EmclBuilder
 {
     /// <summary>Gets the class-definition registry used by object creation and association import.</summary>
@@ -49,11 +48,10 @@ public sealed class EmclBuilder
     /// <summary>Gets or sets the factory supplying an independent demand calculator for each logical device.</summary>
     public Func<IDemandValueCalculator> DemandCalculatorFactory { get; set; } = () => new ArithmeticMeanDemandCalculator();
 
-    /// <summary>Creates a builder with the supported Blue Book and SPODES definition providers registered.</summary>
+    /// <summary>Creates a builder with the supported class definitions registered.</summary>
     public EmclBuilder()
     {
-        Definitions.AddProvider(new BlueBook16Profile());
-        Definitions.AddProvider(new Spodes4Profile());
+        Definitions.AddProvider(StandardDefinitions.CreateProvider());
     }
 
     /// <summary>Creates an importer using the current definitions, object factory, and limits.</summary>
@@ -61,16 +59,15 @@ public sealed class EmclBuilder
     public AssociationImporter CreateImporter() => new(Definitions, Factory, Limits);
     /// <summary>Builds a logical device, optionally attaching a previously imported catalog and association snapshot.</summary>
     /// <param name="logicalDeviceId">The caller-defined logical-device identity.</param>
-    /// <param name="profileId">The standard-profile identifier, including its edition.</param>
     /// <param name="imported">An optional previously imported catalog and association permission snapshot.</param>
     /// <param name="associationObject">The association logical name; null selects 0.0.40.0.0.255.</param>
     /// <param name="captures">An optional capture source; null selects the local catalog source.</param>
-    /// <returns>A composed logical device with registered standard handlers when the profile is built in.</returns>
-    public EmclDevice Build(string logicalDeviceId, string profileId, ImportedAssociation? imported = null, LogicalName? associationObject = null, ICaptureValueSource? captures = null)
+    /// <returns>A composed logical device with registered standard handlers.</returns>
+    public EmclDevice Build(string logicalDeviceId, ImportedAssociation? imported = null, LogicalName? associationObject = null, ICaptureValueSource? captures = null)
     {
         Limits.Validate();
-        var catalog = imported?.Catalog ?? new ObjectCatalog(logicalDeviceId, profileId);
-        if (catalog.LogicalDeviceId != logicalDeviceId || catalog.ProfileId != profileId)
+        var catalog = imported?.Catalog ?? new ObjectCatalog(logicalDeviceId);
+        if (catalog.LogicalDeviceId != logicalDeviceId)
         {
             throw new ArgumentException("Imported catalog identity mismatch.");
         }
@@ -78,14 +75,7 @@ public sealed class EmclBuilder
         var handlers = new HandlerRegistry();
         var associations = new AssociationState();
         captures ??= new CatalogCaptureValueSource(catalog, handlers, AccessPolicy);
-        if (profileId == BlueBook16Profile.Id)
-        {
-            new BlueBook16Profile().RegisterHandlers(catalog, Definitions, handlers, associations, ClockFactory(), captures, Factory, Limits, MeasurementTimeProvider, DemandCalculatorFactory());
-        }
-        else if (profileId == Spodes4Profile.Id)
-        {
-            new Spodes4Profile().RegisterHandlers(catalog, Definitions, handlers, associations, ClockFactory(), captures, Factory, Limits, MeasurementTimeProvider, DemandCalculatorFactory());
-        }
+        StandardHandlerRegistration.Register(catalog, Definitions, handlers, associations, ClockFactory(), captures, Factory, Limits, MeasurementTimeProvider, DemandCalculatorFactory());
 
         if (imported != null)
         {

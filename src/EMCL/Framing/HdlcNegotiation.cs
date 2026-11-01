@@ -1,9 +1,10 @@
 using System.Collections.Immutable;
 using EMCL.Framing.Hdlc.Frames;
 
-namespace EMCL.Examples.AssociationDump.Transport;
+namespace EMCL.Framing;
 
-internal static class HdlcNegotiation
+/// <summary>Parses HDLC UA link parameters used to bound outgoing information fields.</summary>
+public static class HdlcNegotiation
 {
     private const byte FormatIdentifier = 0x81;
     private const byte GroupIdentifier = 0x80;
@@ -15,7 +16,10 @@ internal static class HdlcNegotiation
     private const int MaximumInformationLength = 2030;
     private const int MaximumWindow = HdlcFrameFormat.SequenceMask;
 
-    internal static int MaximumOutgoingInformation(ImmutableArray<byte> information)
+    /// <summary>Returns the accepted outgoing information size, capped at the safe default.</summary>
+    /// <param name="information">The UA information field.</param>
+    /// <returns>The maximum number of outgoing information octets.</returns>
+    public static int MaximumOutgoingInformation(ImmutableArray<byte> information)
     {
         if (information.IsDefaultOrEmpty)
         {

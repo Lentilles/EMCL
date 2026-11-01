@@ -29,6 +29,8 @@ public sealed class AssociationJsonTests
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
         using var parsed = JsonDocument.Parse(json);
         var root = parsed.RootElement;
+        Assert.Equal(3, root.GetProperty("schemaVersion").GetInt32());
+        Assert.False(root.GetProperty("source").TryGetProperty("profileId", out _));
         Assert.Equal(2, root.GetProperty("objectCount").GetInt32());
         var objects = root.GetProperty("objects").EnumerateArray().ToArray();
         Assert.Equal("0.0.96.1.0.255", objects[0].GetProperty("obisCode").GetString());
@@ -43,7 +45,7 @@ public sealed class AssociationJsonTests
         Assert.Equal(3, register.GetProperty("classId").GetInt32());
         var attributes = register.GetProperty("attributes").EnumerateArray().ToArray();
         var logicalName = attributes.Single(attribute => attribute.GetProperty("index").GetInt32() == 1);
-        Assert.True(logicalName.GetProperty("definedByProfile").GetBoolean());
+        Assert.True(logicalName.GetProperty("definedByLibrary").GetBoolean());
         Assert.False(logicalName.GetProperty("reportedByAssociation").GetBoolean());
         Assert.Equal(JsonValueKind.Null, logicalName.GetProperty("access").ValueKind);
         var value = attributes.Single(attribute => attribute.GetProperty("index").GetInt32() == 2);
@@ -57,7 +59,7 @@ public sealed class AssociationJsonTests
         Assert.Equal(new[] { 1, 2 }, access.GetProperty("selectors").EnumerateArray().Select(selector => selector.GetInt32()));
         Assert.DoesNotContain("Invoke", access.GetProperty("modes").EnumerateArray().Select(mode => mode.GetString()));
         var additional = attributes.Single(attribute => attribute.GetProperty("index").GetInt32() == 7);
-        Assert.False(additional.GetProperty("definedByProfile").GetBoolean());
+        Assert.False(additional.GetProperty("definedByLibrary").GetBoolean());
         Assert.False(additional.GetProperty("access").GetProperty("read").GetBoolean());
         var reset = register.GetProperty("methods").EnumerateArray().Single(method => method.GetProperty("index").GetInt32() == 1);
         Assert.Equal("reset", reset.GetProperty("name").GetString());

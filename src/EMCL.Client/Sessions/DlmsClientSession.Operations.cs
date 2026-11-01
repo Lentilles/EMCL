@@ -152,12 +152,11 @@ public sealed partial class DlmsClientSession
 
     /// <inheritdoc />
     public async ValueTask<ImportedAssociation> LoadCatalogAsync(AssociationImporter importer, string logicalDeviceId,
-        string profileId, string associationId, byte associationVersion, LogicalName? associationObject = null,
+        string associationId, byte associationVersion, LogicalName? associationObject = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(importer);
         ArgumentException.ThrowIfNullOrWhiteSpace(logicalDeviceId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         ArgumentException.ThrowIfNullOrWhiteSpace(associationId);
         if (associationVersion is not (AssociationLnMembers.Version1 or AssociationLnMembers.Version3))
         {
@@ -167,7 +166,7 @@ public sealed partial class DlmsClientSession
         var value = await GetAsync(CosemClassIds.AssociationLn, associationObject ?? CurrentAssociation,
             AssociationLnMembers.Attributes.ObjectList, cancellationToken: cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        return importer.Import(value, logicalDeviceId, profileId, associationId, associationVersion);
+        return importer.Import(value, logicalDeviceId, associationId, associationVersion);
     }
 
     private PendingOperation RegisterOperation(CosemOperationKind kind)

@@ -23,12 +23,12 @@ public static class DefinitionConstraints
     public static string? DateTime(DlmsValue value) => (value.Type is DlmsType.OctetString or DlmsType.DateTime)
         && value.Bytes.Length == DlmsValueSizes.DateTime ? null : "A complete date-time has twelve octets.";
 
-    /// <summary>Rejects collection and date/time values for scalar register profiles.</summary>
+    /// <summary>Rejects collection and date/time values for scalar register definitions.</summary>
     /// <param name="value">The proposed register value.</param>
     /// <returns>Null when permitted; otherwise a diagnostic.</returns>
     public static string? ScalarRegisterValue(DlmsValue value) => value.Type is
         DlmsType.Array or DlmsType.Structure or DlmsType.CompactArray or DlmsType.DateTime or DlmsType.Date or DlmsType.Time
-        ? "The profile requires a scalar register value without a date/time tag." : null;
+        ? "This definition requires a scalar register value without a date/time tag." : null;
 
     /// <summary>Validates the status choices defined for Extended and Demand Register.</summary>
     /// <param name="value">The proposed register status.</param>

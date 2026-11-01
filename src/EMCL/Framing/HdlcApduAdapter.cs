@@ -17,7 +17,7 @@ public sealed class HdlcApduAdapter : IFramePayloadAdapter<HdlcFrame>
 
     private readonly HdlcAddress local, remote;
     private readonly bool response;
-    private readonly int maxInformationBytes;
+    private int maxInformationBytes;
     private readonly HdlcSegmentAssembler assembler;
     private readonly LlcCodec llc;
     /// <summary>Gets or sets the next three-bit send sequence number; the application manages link state.</summary>
@@ -39,6 +39,18 @@ public sealed class HdlcApduAdapter : IFramePayloadAdapter<HdlcFrame>
     }
     /// <inheritdoc />
     public bool HasPending => assembler.HasPending;
+
+    internal void SetMaximumInformationBytes(int value)
+    {
+        int maximum = HdlcFrameFormat.MaximumFrameLength - (HdlcFrameFormat.FormatFieldLength + local.Length + remote.Length
+            + HdlcFrameFormat.ControlFieldLength + 2 * HdlcFrameFormat.ChecksumLength);
+        if (value < LlcHeader.Length || value > maximum)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value));
+        }
+
+        maxInformationBytes = value;
+    }
 
     /// <summary>Creates an HDLC data adapter using caller-selected addresses, sequence state, and negotiated information-field size.</summary>
     /// <param name="local">The local HDLC address.</param>

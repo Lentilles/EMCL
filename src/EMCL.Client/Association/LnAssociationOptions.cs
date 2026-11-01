@@ -17,6 +17,12 @@ public sealed record LnAssociationOptions
 
     /// <summary>Gets the requested services; the default includes all implemented services except priority management.</summary>
     public DlmsConformance Conformance { get; init; } = SupportedConformance & ~DlmsConformance.PriorityManagement;
+    /// <summary>Optional wire-level conformance proposal. Extra service bits are advertised but are not exposed as implemented operations.</summary>
+    public DlmsConformance? AdvertisedConformance { get; init; }
+    /// <summary>Gets the optional response-allowed flag; null omits it and uses the protocol default (true).</summary>
+    public bool? ResponseAllowed { get; init; }
+    /// <summary>Allows a peer's unrequested SET block-transfer bit in AARE while excluding it from usable negotiated services.</summary>
+    public bool AcceptUnexpectedBlockTransferWithSet { get; init; }
     /// <summary>Gets the advertised client receive limit; zero means unlimited by the protocol, while local resource limits still apply.</summary>
     public ushort MaxReceivePduSize { get; init; } = DefaultMaxReceivePduSize;
     /// <summary>Gets the authentication mechanism; no authentication is the default.</summary>
@@ -32,6 +38,18 @@ public sealed record LnAssociationOptions
         if ((Conformance & ~SupportedConformance) != DlmsConformance.None)
         {
             throw new NotSupportedException("The client proposal contains unsupported conformance flags.");
+        }
+
+        if (AdvertisedConformance is { } advertised
+            && ((uint)advertised > 0xFFFFFF || (Conformance & ~advertised) != DlmsConformance.None))
+        {
+            throw new ArgumentException("The advertised conformance must be a 24-bit value containing all implemented requested services.",
+                nameof(AdvertisedConformance));
+        }
+
+        if (ResponseAllowed == false)
+        {
+            throw new ArgumentException("An association request must allow a response.", nameof(ResponseAllowed));
         }
 
         if (MaxReceivePduSize != DlmsNegotiation.UnlimitedPduSize && MaxReceivePduSize < DlmsNegotiation.MinimumPduSize)

@@ -11,12 +11,14 @@ namespace EMCL.Tests.Objects.Registers;
 public sealed class ExtendedRegisterTests
 {
     [Theory]
-    [InlineData(BlueBook16Profile.Id, DlmsType.OctetString)]
-    [InlineData(Spodes4Profile.Id, DlmsType.DateTime)]
-    public async Task CaptureAndResetUseProfileTimestampAndPreserveStatus(string profile, DlmsType timestampType)
+    [InlineData(DlmsType.OctetString)]
+    [InlineData(DlmsType.DateTime)]
+    public async Task CaptureAndResetUseConfiguredTimestampAndPreserveStatus(DlmsType timestampType)
     {
         var clock = new ManualTimeProvider();
-        var device = new EmclBuilder { MeasurementTimeProvider = clock }.Build("meter", profile);
+        var builder = new EmclBuilder { MeasurementTimeProvider = clock };
+        builder.Definitions.Register(ExtendedRegisterClassDefinition.Create(timestampType));
+        var device = builder.Build("meter");
         var register = device.Add(4, 0, LogicalName.Parse("1.0.1.8.0.255"));
         var handler = Assert.IsType<ExtendedRegisterHandler>(device.Handlers.Resolve("meter", register));
         var status = Number(DlmsType.UInt32, 7);
@@ -40,7 +42,9 @@ public sealed class ExtendedRegisterTests
     [Fact]
     public async Task FailedCaptureAndResetDoNotPartiallyChangeState()
     {
-        var device = new EmclBuilder().Build("meter", Spodes4Profile.Id);
+        var builder = new EmclBuilder();
+        builder.Definitions.Register(ExtendedRegisterClassDefinition.Create(DlmsType.DateTime, DefinitionConstraints.ScalarRegisterValue));
+        var device = builder.Build("meter");
         var register = device.Add(4, 0, LogicalName.Parse("1.0.1.8.0.255"));
         var handler = Assert.IsType<ExtendedRegisterHandler>(device.Handlers.Resolve("meter", register));
         Assert.Equal(CosemError.ObjectUnavailable, (await ExecuteOperationAsync(device, register, CosemOperationKind.Invoke,
@@ -62,7 +66,7 @@ public sealed class ExtendedRegisterTests
     [Fact]
     public async Task SupportsInstanceDefaultAndHonorsProducerLimitsAndCancellation()
     {
-        var device = new EmclBuilder().Build("meter", BlueBook16Profile.Id);
+        var device = new EmclBuilder().Build("meter");
         var register = device.Add(4, 0, LogicalName.Parse("1.0.1.8.0.255"));
         var handler = new ExtendedRegisterHandler(resetValue: _ => DlmsValue.Octets([1, 2]),
             limits: new ProtocolLimits { MaxMessageBytes = 5 });

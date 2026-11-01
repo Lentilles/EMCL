@@ -7,11 +7,10 @@ namespace EMCL.Objects.Definitions;
 
 internal static class DefinitionFactory
 {
-    internal static CosemClassDescriptor Class(string profile, ushort classId, byte version, string name,
+    internal static CosemClassDescriptor Class(ushort classId, byte version, string name,
         CosemAttributeDescriptor[] attributes, CosemMethodDescriptor[] methods)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(profile);
-        return new(new(profile, classId, version), name, attributes.ToImmutableArray(), methods.ToImmutableArray());
+        return new(new(classId, version), name, attributes.ToImmutableArray(), methods.ToImmutableArray());
     }
 
     internal static CosemAttributeDescriptor LogicalName() => new(CosemObject.LogicalNameAttributeIndex, "logical_name", DlmsType.OctetString,

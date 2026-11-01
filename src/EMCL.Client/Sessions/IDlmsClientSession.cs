@@ -61,17 +61,16 @@ public interface IDlmsClientSession : IAsyncDisposable
     /// <returns>The optional return value.</returns>
     ValueTask<DlmsValue?> ActionAsync(ushort classId, LogicalName logicalName, sbyte method,
         DlmsValue? parameter = null, CancellationToken cancellationToken = default);
-    /// <summary>Reads object_list and atomically imports it using an explicit profile and Association LN version.</summary>
+    /// <summary>Reads object_list and atomically imports it using an explicit Association LN version.</summary>
     /// <param name="importer">The application's configured importer and object factory.</param>
     /// <param name="logicalDeviceId">The imported logical-device identity.</param>
-    /// <param name="profileId">The explicitly selected standard profile.</param>
     /// <param name="associationId">The imported association identity.</param>
     /// <param name="associationVersion">The Association LN version used to interpret access rights.</param>
     /// <param name="associationObject">The remote association name; null selects the standard current association.</param>
     /// <param name="cancellationToken">Cancellation of the complete GET exchange.</param>
     /// <returns>The validated catalog and association permission snapshot; values remain absent.</returns>
     ValueTask<ImportedAssociation> LoadCatalogAsync(AssociationImporter importer, string logicalDeviceId,
-        string profileId, string associationId, byte associationVersion, LogicalName? associationObject = null,
+        string associationId, byte associationVersion, LogicalName? associationObject = null,
         CancellationToken cancellationToken = default);
     /// <summary>Consumes notifications buffered independently of outstanding confirmed requests.</summary>
     /// <param name="cancellationToken">Cancellation of notification consumption, without canceling the session.</param>

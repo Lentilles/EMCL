@@ -3,7 +3,6 @@ using EMCL.Core.Objects;
 using EMCL.Core.Operations;
 using EMCL.Core.Values;
 using EMCL.Objects.Processing;
-using EMCL.Profiles.Spodes;
 
 namespace EMCL.Tests.Objects.Association;
 
@@ -12,7 +11,7 @@ public sealed class AssociationAccessPolicyTests
     [Fact]
     public void InterpretsVersionSpecificAccessModes()
     {
-        var obj = new CosemObject(new(new(Spodes4Profile.Id, 1, 0), "Data", [new(2, "value")], [new(1, "method")]), LogicalName.Parse("0.0.96.1.0.255"));
+        var obj = new CosemObject(new(new(1, 0), "Data", [new(2, "value")], [new(1, "method")]), LogicalName.Parse("0.0.96.1.0.255"));
         var op = new CosemOperation(CosemOperationKind.Read, 1, obj.LogicalName, 2);
         var p = new AssociationAccessPolicy();
         OperationContext C(byte v, byte mode) => new("d", new("a", v, ImmutableDictionary<LogicalName, ObjectAccessRights>.Empty.Add(obj.LogicalName, new([new(2, mode, [1])], [new(1, mode)]))));

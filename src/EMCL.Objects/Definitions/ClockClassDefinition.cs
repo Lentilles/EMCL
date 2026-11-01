@@ -4,7 +4,7 @@ using EMCL.Core.Values;
 
 namespace EMCL.Objects.Definitions;
 
-/// <summary>Constructs reusable Clock class metadata with explicit profile choices.</summary>
+/// <summary>Constructs reusable Clock class metadata.</summary>
 public static class ClockClassDefinition
 {
     private const int MaximumDaylightSavingsDeviationMinutes = 120;
@@ -12,15 +12,14 @@ public static class ClockClassDefinition
     private const int MaximumClockBase = 5;
 
     /// <summary>Creates an independent, versioned class descriptor.</summary>
-    /// <param name="profile">The standard-profile identifier assigned to the returned class key.</param>
     /// <param name="timestampType">The date-time wire tag, either octet-string or date-time.</param>
     /// <param name="minimumZone">The minimum permitted UTC deviation in minutes.</param>
     /// <param name="maximumZone">The maximum permitted UTC deviation in minutes.</param>
-    /// <returns>The class descriptor with the supplied profile choices.</returns>
-    public static CosemClassDescriptor Create(string profile, DlmsType timestampType, int minimumZone, int maximumZone)
+    /// <returns>The class descriptor with the supplied member definitions.</returns>
+    public static CosemClassDescriptor Create(DlmsType timestampType, int minimumZone, int maximumZone)
     {
         DefinitionFactory.RequireTimestampType(timestampType);
-        return DefinitionFactory.Class(profile, CosemClassIds.Clock, ClockMembers.Version0, "Clock",
+        return DefinitionFactory.Class(CosemClassIds.Clock, ClockMembers.Version0, "Clock",
             [DefinitionFactory.LogicalName(), new(ClockMembers.Attributes.Time, "time", timestampType, Constraint: DefinitionConstraints.DateTime),
                 new(ClockMembers.Attributes.TimeZone, "time_zone", DlmsType.Int16, Constraint: value => Range(value, minimumZone, maximumZone)),
                 new(ClockMembers.Attributes.Status, "status", DlmsType.UInt8),
@@ -35,5 +34,5 @@ public static class ClockClassDefinition
     }
 
     private static string? Range(DlmsValue value, int minimum, int maximum)
-        => value.AsInt64() >= minimum && value.AsInt64() <= maximum ? null : "Value is outside the profile range.";
+        => value.AsInt64() >= minimum && value.AsInt64() <= maximum ? null : "Value is outside the allowed range.";
 }

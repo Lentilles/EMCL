@@ -112,7 +112,13 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
             throw new ArgumentException("The association negotiator must produce an AARQ.");
         }
 
+        if (options.AssociationRetryDelay is not null && channel is not IAssociationRequestRetransmission)
+        {
+            throw new NotSupportedException("Association AARQ retry requires a channel with safe link-layer retransmission.");
+        }
+
         using var deadline = new ExchangeDeadline(options, cancellationToken, lifetimeToken);
+        string stage = "AARE";
         PendingControl pending;
         lock (gate)
         {
@@ -125,6 +131,18 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
         try
         {
             await SendAsync(request, options.Limits.MaxMessageBytes, deadline.Token).ConfigureAwait(false);
+            if (options.AssociationRetryDelay is { } retryDelay)
+            {
+                var responseTask = pending.Response.Task;
+                var first = await Task.WhenAny(responseTask,
+                    Task.Delay(retryDelay, options.TimeProvider, deadline.Token)).ConfigureAwait(false);
+                if (first != responseTask && !responseTask.IsCompleted)
+                {
+                    await ((IAssociationRequestRetransmission)channel)
+                        .RetryUnansweredAssociationRequestAsync(deadline.Token).ConfigureAwait(false);
+                }
+            }
+
             var response = await pending.Response.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
             var context = negotiator.AcceptResponse(response, options.Association);
             ValidateNegotiatedContext(context);
@@ -140,6 +158,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
                 var operation = authenticator.CreateAuthenticationOperation(request, response, options.Association);
                 if (operation != null)
                 {
+                    stage = "HLS ACTION";
                     var result = await AuthenticateAsync(operation, deadline.Token).ConfigureAwait(false);
                     authenticator.ValidateAuthenticationResponse(result.Result.Value, request, response, options.Association);
                 }
@@ -156,6 +175,10 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
         catch (OperationCanceledException)
         {
             var error = deadline.TranslateCancellation(SessionFailure());
+            if (error is TimeoutException timeout)
+            {
+                error = new TimeoutException($"stage={stage}; association deadline expired.", timeout);
+            }
             Fault(error);
             ExceptionDispatchInfo.Capture(error).Throw();
             throw;

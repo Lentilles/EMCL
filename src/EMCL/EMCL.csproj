@@ -7,8 +7,6 @@
     <ProjectReference Include="../EMCL.Client/EMCL.Client.csproj" />
     <ProjectReference Include="../EMCL.Protocol/EMCL.Protocol.csproj" />
     <ProjectReference Include="../EMCL.Objects/EMCL.Objects.csproj" />
-    <ProjectReference Include="../EMCL.Profiles.BlueBook/EMCL.Profiles.BlueBook.csproj" />
-    <ProjectReference Include="../EMCL.Profiles.Spodes/EMCL.Profiles.Spodes.csproj" />
     <ProjectReference Include="../EMCL.Framing.Hdlc/EMCL.Framing.Hdlc.csproj" />
     <ProjectReference Include="../EMCL.Framing.Wrapper/EMCL.Framing.Wrapper.csproj" />
     <ProjectReference Include="../EMCL.Transport/EMCL.Transport.csproj" />

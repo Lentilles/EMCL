@@ -15,15 +15,15 @@ namespace EMCL.Tests.Client;
 public sealed class ClientBlockTransferTests
 {
     [Theory]
-    [InlineData(BlueBook16Profile.Id, 3)]
-    [InlineData(Spodes4Profile.Id, 1)]
-    public async Task ImportsKnownAndFutureObjectsFromAnAutomaticallyAssembledCatalog(string profile, byte version)
+    [InlineData(3)]
+    [InlineData(1)]
+    public async Task ImportsKnownAndFutureObjectsFromAnAutomaticallyAssembledCatalog(byte version)
     {
         var pair = DuplexApduChannel.CreatePair();
         await using var peer = new SessionPeer(pair.Server);
         await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options());
         await peer.AssociateAsync(client);
-        var importing = client.LoadCatalogAsync(new EmclBuilder().CreateImporter(), "meter", profile, "public", version,
+        var importing = client.LoadCatalogAsync(new EmclBuilder().CreateImporter(), "meter", "public", version,
             cancellationToken: TestContext.Current.CancellationToken).AsTask();
         var request = await peer.ReadAsync<LnRequest>();
         Assert.Equal(CosemClassIds.AssociationLn, request.Operation.ClassId);

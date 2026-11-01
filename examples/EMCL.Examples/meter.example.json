@@ -1,14 +1,17 @@
 {
-  "connection": {
-    "transport": "WrapperTcp",
-    "host": "127.0.0.1",
-    "tcpPort": 13001,
-    "clientWrapperPort": 17,
-    "serverWrapperPort": 1,
-    "connectTimeoutSeconds": 10
+  "channel": {
+    "connection": {
+      "host": "127.0.0.1",
+      "tcpPort": 13001,
+      "connectTimeoutSeconds": 10
+    },
+    "framing": {
+      "kind": "Wrapper",
+      "clientPort": 17,
+      "serverPort": 1
+    }
   },
   "association": {
-    "profileId": "Spodes.4",
     "version": 1,
     "logicalName": "0.0.40.0.0.255",
     "logicalDeviceId": "meter-1",

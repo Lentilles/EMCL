@@ -11,13 +11,15 @@ namespace EMCL.Tests.Objects.Registers;
 public sealed class DemandRegisterTests
 {
     [Theory]
-    [InlineData(BlueBook16Profile.Id, DlmsType.OctetString, 1, 50d)]
-    [InlineData(Spodes4Profile.Id, DlmsType.DateTime, 2, 30d)]
-    public async Task TransitionsPeriodsAndRetainsOnlySlidingWindowSamples(string profile, DlmsType timestampType,
+    [InlineData(DlmsType.OctetString, 1, 50d)]
+    [InlineData(DlmsType.DateTime, 2, 30d)]
+    public async Task TransitionsPeriodsAndRetainsOnlySlidingWindowSamples(DlmsType timestampType,
         int periods, double expected)
     {
         var clock = new ManualTimeProvider();
-        var device = new EmclBuilder { MeasurementTimeProvider = clock }.Build("meter", profile);
+        var builder = new EmclBuilder { MeasurementTimeProvider = clock };
+        builder.Definitions.Register(DemandRegisterClassDefinition.Create(timestampType));
+        var device = builder.Build("meter");
         var register = device.Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
         var handler = Assert.IsType<DemandRegisterHandler>(device.Handlers.Resolve("meter", register));
         await WriteValueAsync(device, register, 8, Number(DlmsType.UInt32, 10));
@@ -58,7 +60,7 @@ public sealed class DemandRegisterTests
     public async Task RejectsUnconfiguredPeriodInvalidMetadataAndOutOfOrderSamples()
     {
         var clock = new ManualTimeProvider();
-        var device = new EmclBuilder { MeasurementTimeProvider = clock }.Build("meter", BlueBook16Profile.Id);
+        var device = new EmclBuilder { MeasurementTimeProvider = clock }.Build("meter");
         var register = device.Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
         var handler = Assert.IsType<DemandRegisterHandler>(device.Handlers.Resolve("meter", register));
         Assert.Equal(CosemError.ObjectUnavailable, (await Record(1)).Error);
@@ -90,7 +92,7 @@ public sealed class DemandRegisterTests
     [Fact]
     public async Task BoundsHistoryAndDiscardsSamplesAfterConfigurationWrites()
     {
-        var device = new EmclBuilder { Limits = new ProtocolLimits { MaxCollectionItems = 2 } }.Build("meter", BlueBook16Profile.Id);
+        var device = new EmclBuilder { Limits = new ProtocolLimits { MaxCollectionItems = 2 } }.Build("meter");
         var register = device.Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
         var handler = Assert.IsType<DemandRegisterHandler>(device.Handlers.Resolve("meter", register));
         await WriteValueAsync(device, register, 8, Number(DlmsType.UInt32, 600));
@@ -110,7 +112,9 @@ public sealed class DemandRegisterTests
     public async Task AllowsCustomCalculatorAndDefaultsAndRejectsInvalidCalculatedValueAtomically()
     {
         var calculator = new LastSampleCalculator();
-        var device = new EmclBuilder { DemandCalculatorFactory = () => calculator }.Build("meter", Spodes4Profile.Id);
+        var builder = new EmclBuilder { DemandCalculatorFactory = () => calculator };
+        builder.Definitions.Register(DemandRegisterClassDefinition.Create(DlmsType.DateTime, DefinitionConstraints.ScalarRegisterValue));
+        var device = builder.Build("meter");
         var register = device.Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
         var handler = Assert.IsType<DemandRegisterHandler>(device.Handlers.Resolve("meter", register));
         await WriteValueAsync(device, register, 8, Number(DlmsType.UInt32, 60));
@@ -137,7 +141,7 @@ public sealed class DemandRegisterTests
     [InlineData(double.MaxValue, -double.MaxValue, 0d)]
     public void MeanAvoidsIntermediateOverflow(double first, double second, double expected)
     {
-        var register = new EmclBuilder().Build("meter", BlueBook16Profile.Id).Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
+        var register = new EmclBuilder().Build("meter").Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
         var value = new ArithmeticMeanDemandCalculator().Calculate(register,
             [new(DateTimeOffset.UnixEpoch, new(DlmsType.Float64, first)), new(DateTimeOffset.UnixEpoch, new(DlmsType.Float64, second))]);
         Assert.Equal(expected, value.Value);
@@ -146,7 +150,7 @@ public sealed class DemandRegisterTests
     [Fact]
     public async Task IsolatesSampleHistoryAndPreservesStateWhenResetDefaultsAreUnavailable()
     {
-        var device = new EmclBuilder().Build("meter", BlueBook16Profile.Id);
+        var device = new EmclBuilder().Build("meter");
         var first = device.Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
         var second = device.Add(5, 0, LogicalName.Parse("1.0.2.6.0.255"));
         var handler = Assert.IsType<DemandRegisterHandler>(device.Handlers.Resolve("meter", first));

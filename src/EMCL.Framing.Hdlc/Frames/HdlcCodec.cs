@@ -55,7 +55,11 @@ public sealed class HdlcCodec : IIncrementalCodec<HdlcFrame>
         byte[] data = input.Slice(start + 1, length + 1).ToArray();
         if (data[length] != HdlcFrameFormat.Flag)
         {
-            return new(DecodeStatus.InvalidData, Error: "Missing HDLC closing flag.");
+            int nearbyStart = Math.Max(0, length - 8);
+            string nearClosing = Convert.ToHexString(data.AsSpan(nearbyStart, length - nearbyStart + 1));
+            return new(DecodeStatus.InvalidData, Error:
+                $"Missing HDLC closing flag at offset {start + length + 1} " +
+                $"(declared length {length}, found {data[length]:X2}, near closing={nearClosing}).");
         }
 
         int position = HdlcFrameFormat.FormatFieldLength;

@@ -4,7 +4,7 @@ namespace EMCL.Examples.AssociationDump.Configuration;
 
 internal sealed record MeterConfiguration
 {
-    public required TcpConnectionSettings Connection
+    public required ChannelSettings Channel
     {
         get; init;
     }

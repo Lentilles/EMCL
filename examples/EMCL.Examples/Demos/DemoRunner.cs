@@ -15,7 +15,6 @@ using EMCL.Framing;
 using EMCL.Messaging;
 using EMCL.Objects.Association;
 using EMCL.Objects.Definitions;
-using EMCL.Profiles.BlueBook;
 using EMCL.Protocol.Apdu;
 using EMCL.Protocol.Axdr;
 using EMCL.Transport.Channels;
@@ -31,7 +30,7 @@ internal static class DemoRunner
     {
         await ClientSessionExample.RunAsync();
         var builder = new EmclBuilder();
-        var device = builder.Build("meter-1", BlueBook16Profile.Id);
+        var device = builder.Build("meter-1");
         await RegisterExamples.RunAsync(device);
         var register = device.Add(CosemClassIds.Register, RegisterMembers.Version0, LogicalName.Parse("1.0.1.8.0.255"));
         register.State.Set(RegisterMembers.Attributes.Value, DlmsValue.Number(DlmsType.UInt32, 12345));
@@ -49,8 +48,8 @@ internal static class DemoRunner
             [new(RegisterMembers.Methods.Reset, (byte)AccessModeV3.Invoke)]);
         var objectList = DlmsValue.Array(AssociationHandler.Entry(register, rights));
         var binaryList = new AxdrCodec().EncodeBytes(objectList);
-        var imported = builder.CreateImporter().Import(new ReadOnlySequence<byte>(binaryList), "imported-meter", BlueBook16Profile.Id, "public", AssociationLnMembers.Version3);
-        var importedDevice = builder.Build("imported-meter", BlueBook16Profile.Id, imported);
+        var imported = builder.CreateImporter().Import(new ReadOnlySequence<byte>(binaryList), "imported-meter", "public", AssociationLnMembers.Version3);
+        var importedDevice = builder.Build("imported-meter", imported);
         Console.WriteLine($"Imported objects: {importedDevice.Catalog.Objects.Length}");
         Console.WriteLine($"Imported value: {(await importedDevice.Pipeline.ExecuteAsync(operation, importedDevice.CreateContext())).Error}");
         // Read exactly the same APDU from Wrapper framing over an arbitrary Stream.

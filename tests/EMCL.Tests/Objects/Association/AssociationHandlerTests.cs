@@ -2,7 +2,6 @@ using EMCL.Composition;
 using EMCL.Core.Objects;
 using EMCL.Core.Operations;
 using EMCL.Core.Values;
-using EMCL.Profiles.BlueBook;
 
 namespace EMCL.Tests.Objects.Association;
 
@@ -11,7 +10,7 @@ public sealed class AssociationHandlerTests
     [Fact]
     public async Task ChangesVisibilityAndUsersWithoutDeletingSharedObjects()
     {
-        var d = new EmclBuilder().Build("d", BlueBook16Profile.Id);
+        var d = new EmclBuilder().Build("d");
         var association = d.Add(15, 3, LogicalName.Parse("0.0.40.0.0.255"));
         var entry = Entry(1, 0, "0.0.96.1.0.255");
         Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(d, association, CosemOperationKind.Invoke, 3, entry)).Error);

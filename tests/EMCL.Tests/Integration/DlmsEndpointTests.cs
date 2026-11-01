@@ -6,7 +6,6 @@ using EMCL.Framing;
 using EMCL.Framing.Hdlc.Frames;
 using EMCL.Framing.Wrapper;
 using EMCL.Messaging;
-using EMCL.Profiles.BlueBook;
 using EMCL.Protocol.Apdu;
 using EMCL.Tests.Support;
 using EMCL.Transport.Channels;
@@ -18,7 +17,7 @@ public sealed class DlmsEndpointTests
     [Fact]
     public async Task ProducesEquivalentResponsesAcrossTransports()
     {
-        var d = new EmclBuilder().Build("d", BlueBook16Profile.Id);
+        var d = new EmclBuilder().Build("d");
         var r = d.Add(3, 0, LogicalName.Parse("1.0.1.8.0.255"));
         r.State.Set(2, Number(DlmsType.UInt32, 12345));
         var codec = new ApduCodec();

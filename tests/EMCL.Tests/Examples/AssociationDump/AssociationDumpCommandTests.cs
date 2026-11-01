@@ -18,10 +18,10 @@ namespace EMCL.Tests.Examples.AssociationDump;
 public sealed class AssociationDumpCommandTests
 {
     [Theory]
-    [InlineData(BlueBook16Profile.Id, 3, false)]
-    [InlineData(Spodes4Profile.Id, 1, false)]
-    [InlineData(BlueBook16Profile.Id, 3, true)]
-    public async Task ConnectsOverTcpReadsCatalogBlocksAndWritesJson(string profile, byte version, bool closeAfterData)
+    [InlineData(3, false)]
+    [InlineData(1, false)]
+    [InlineData(3, true)]
+    public async Task ConnectsOverTcpReadsCatalogBlocksAndWritesJson(byte version, bool closeAfterData)
     {
         using var directory = new ExportTestDirectory();
         using var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -29,14 +29,16 @@ public sealed class AssociationDumpCommandTests
         var settings = ExportTestData.Configuration("association.json");
         settings = settings with
         {
-            Connection = settings.Connection with
+            Channel = settings.Channel with
             {
-                TcpPort = ((IPEndPoint)listener.LocalEndpoint).Port
+                Connection = settings.Channel.Connection with
+                {
+                    TcpPort = ((IPEndPoint)listener.LocalEndpoint).Port
+                }
             },
             Association = settings.Association with
             {
-                ProfileId = profile,
-                Version = version,
+                                Version = version,
                 RequestTimeoutSeconds = 3
             }
         };
@@ -52,7 +54,6 @@ public sealed class AssociationDumpCommandTests
         string outputPath = Path.Combine(directory.Path, "association.json");
         using var document = JsonDocument.Parse(await File.ReadAllTextAsync(outputPath, TestContext.Current.CancellationToken));
         Assert.Equal(2, document.RootElement.GetProperty("objectCount").GetInt32());
-        Assert.Equal(profile, document.RootElement.GetProperty("source").GetProperty("profileId").GetString());
         Assert.Equal(version, document.RootElement.GetProperty("source").GetProperty("associationVersion").GetInt32());
         var register = document.RootElement.GetProperty("objects").EnumerateArray()
             .Single(obj => obj.GetProperty("classId").GetInt32() == 3);
@@ -78,8 +79,9 @@ public sealed class AssociationDumpCommandTests
         async Task ServeAsync()
         {
             using var tcp = await listener.AcceptTcpClientAsync(TestContext.Current.CancellationToken);
+            var wrapper = Assert.IsType<WrapperFramingSettings>(settings.Channel.Framing);
             await using var channel = new FramedApduChannel<WrapperFrame>(new StreamByteTransport(tcp.GetStream(), leaveOpen: true),
-                new WrapperCodec(), new WrapperApduAdapter(settings.Connection.ServerWrapperPort, settings.Connection.ClientWrapperPort));
+                new WrapperCodec(), new WrapperApduAdapter(wrapper.ServerPort, wrapper.ClientPort));
             var codec = new ApduCodec();
             var aarq = await ReadAsync<AcseApdu>();
             Assert.Equal(AcseKind.Aarq, aarq.Kind);

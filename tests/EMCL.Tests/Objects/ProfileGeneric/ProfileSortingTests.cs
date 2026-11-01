@@ -2,7 +2,6 @@ using EMCL.Composition;
 using EMCL.Core.Objects;
 using EMCL.Core.Operations;
 using EMCL.Core.Values;
-using EMCL.Profiles.BlueBook;
 
 namespace EMCL.Tests.Objects.ProfileGeneric;
 
@@ -17,7 +16,7 @@ public sealed class ProfileSortingTests
     [InlineData(6, -3L, 2L)]
     public async Task RetainsRowsAccordingToTheSelectedSortMethod(int sortMethod, long first, long second)
     {
-        var device = new EmclBuilder().Build("meter", BlueBook16Profile.Id);
+        var device = new EmclBuilder().Build("meter");
         var register = device.Add(3, 0, LogicalName.Parse("1.0.1.8.0.255"));
         var profile = device.Add(7, 1, LogicalName.Parse("1.0.99.1.0.255"));
         await WriteValueAsync(device, profile, 3, DlmsValue.Array(CaptureDefinition(register)));
@@ -45,7 +44,7 @@ public sealed class ProfileSortingTests
     [Fact]
     public async Task ChangingCaptureDefinitionsClearsDependentBuffers()
     {
-        var device = new EmclBuilder().Build("meter", BlueBook16Profile.Id);
+        var device = new EmclBuilder().Build("meter");
         var register = device.Add(3, 0, LogicalName.Parse("1.0.1.8.0.255"));
         register.State.Set(2, Number(DlmsType.Int32, 42));
         var inner = device.Add(7, 1, LogicalName.Parse("1.0.99.1.0.255"));

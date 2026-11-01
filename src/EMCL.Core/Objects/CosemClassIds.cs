@@ -1,6 +1,6 @@
 namespace EMCL.Core.Objects;
 
-/// <summary>Defines the interface-class identifiers supported by the built-in profiles.</summary>
+/// <summary>Defines the supported interface-class identifiers.</summary>
 public static class CosemClassIds
 {
     /// <summary>The Data interface-class identifier.</summary>
