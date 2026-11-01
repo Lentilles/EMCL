@@ -2,7 +2,6 @@ using EMCL.Client.Sessions;
 using EMCL.Core.Objects;
 using EMCL.Framing;
 using EMCL.Framing.Hdlc.Frames;
-using EMCL.Transport.Streams;
 
 namespace EMCL.Examples.AssociationDump.Configuration;
 
@@ -21,7 +20,6 @@ internal sealed record LoadedConfiguration(MeterConfiguration Settings, ClientSe
                     hdlc.ExtendedAddress), Session.RequestTimeout, frameObserver),
             _ => throw new ArgumentException("Unsupported channel framing.")
         };
-        return new(new TcpByteTransportFactory(channel.Connection.Host, channel.Connection.TcpPort,
-            ConnectTimeout), framing, Settings.Limits);
+        return new(channel.Connection.CreateFactory(ConnectTimeout), framing, Settings.Limits);
     }
 }

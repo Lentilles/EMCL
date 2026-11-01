@@ -1,6 +1,6 @@
 # Консольные примеры EMCL
 
-Приложение читает Association LN `object_list` у прибора через **Wrapper/TCP** или **HDLC через TCP-шлюз** и сохраняет JSON. Оно передаёт единую настройку канала в `ApduChannels.ConnectAsync`; библиотека один раз открывает TCP-соединение и применяет Wrapper или HDLC. Настройки подключения и экспорта находятся в отдельном файле. Выполняются ассоциация и GET; значения остальных атрибутов не запрашиваются.
+Приложение читает Association LN `object_list` у прибора через **Wrapper/TCP**, **HDLC через TCP-шлюз** или **Serial** и сохраняет JSON. Оно передаёт единую настройку канала в `ApduChannels.ConnectAsync`; библиотека один раз открывает выбранное соединение и применяет Wrapper или HDLC. Настройки подключения и экспорта находятся в отдельном файле. Выполняются ассоциация и GET; значения остальных атрибутов не запрашиваются.
 
 ## Запуск
 
@@ -11,11 +11,39 @@ cp examples/EMCL.Examples/meter.example.json examples/EMCL.Examples/meter.local.
 dotnet run --project examples/EMCL.Examples -c Release
 ```
 
-Без аргументов приложение использует `meter.local.json`, если он есть, иначе `meter.example.json`. Оба файла при сборке копируются рядом с приложением, поэтому рабочий каталог IDE не влияет на выбор настроек. После выгрузки в консоли печатается полный путь к JSON. Перед запуском измените конфигурацию под прибор: `channel.connection` задаёт адрес, TCP-порт и таймаут, `channel.framing` задаёт `"kind": "Wrapper"` с `clientPort`/`serverPort` либо `"kind": "Hdlc"` с `clientAddress`/`serverLogicalAddress` и при необходимости `serverPhysicalAddress`. Числа задаются в десятичной форме. Старый формат `connection.transport: WrapperTcp/HdlcTcp` тоже читается и преобразуется в новую настройку при загрузке.
+Без аргументов приложение использует `meter.local.json`, если он есть, иначе `meter.example.json`. Оба файла при сборке копируются рядом с приложением, поэтому рабочий каталог IDE не влияет на выбор настроек. После выгрузки в консоли печатается полный путь к JSON. Перед запуском измените конфигурацию под прибор: `channel.connection` задаёт тип соединения (`"kind": "Tcp"` или `"kind": "Serial"`) и его параметры; без `kind` выбирается TCP, `channel.framing` задаёт `"kind": "Wrapper"` с `clientPort`/`serverPort` либо `"kind": "Hdlc"` с `clientAddress`/`serverLogicalAddress` и при необходимости `serverPhysicalAddress`. Числа задаются в десятичной форме. Старый формат `connection.transport: WrapperTcp/HdlcTcp` тоже читается и преобразуется в новую настройку при загрузке.
+
+Для Serial скопируйте `meter.serial.example.json` в `meter.local.json` и укажите `portName` и параметры линии под прибор. Имя порта: `COM3` в Windows, `/dev/ttyUSB0` в Linux, `/dev/cu.usbserial-...` в macOS. Пример настройки канала:
+
+```json
+{
+  "connection": {
+    "kind": "Serial",
+    "portName": "COM3",
+    "baudRate": 9600,
+    "dataBits": 8,
+    "parity": "None",
+    "stopBits": "One",
+    "handshake": "None",
+    "dtrEnable": false,
+    "rtsEnable": false,
+    "connectTimeoutSeconds": 10
+  },
+  "framing": {
+    "kind": "Hdlc",
+    "clientAddress": 16,
+    "serverLogicalAddress": 1
+  }
+}
+```
+
+Этот объект заменяет секцию `channel`. Допустимые значения: `parity` — `None`, `Odd`, `Even`, `Mark`, `Space`; `stopBits` — `One`, `Two`, `OnePointFive`; `handshake` — `None`, `XOnXOff`, `RequestToSend`, `RequestToSendXOnXOff`. Поддержка отдельных режимов зависит от ОС и драйвера. При аппаратном flow control RTS управляется драйвером, поэтому оставьте `rtsEnable: false`. Значения по умолчанию: 9600 8N1, без flow control, DTR и RTS выключены. Для двоичного HDLC обычно нужен `handshake: None`, чтобы байты XON/XOFF оставались данными.
+
+Порт закрывается при освобождении канала, а также при отмене активного чтения/записи или таймауте обмена. После этого требуется новое подключение. Прямое подключение начинает сразу обмен HDLC; IEC 62056-21 sign-on и автоматическое переключение скорости не выполняются.
 
 Для HDLC-адреса сервера `1/17` по умолчанию используются два байта `02 23`. Для четырёхбайтного варианта `00 02 00 23` укажите `"extendedAddress": true` в `channel.framing`. В старом формате конфигурации это поле называется `"hdlcExtendedAddress": true` и находится в `connection`. Оба варианта обозначают те же логический и физический адреса; длина видна в строке подключения.
 
-Консоль показывает обмен: для Wrapper — полные DLMS APDU, для HDLC — кадры SNRM/UA/I/RR. Каждое сообщение получает номер, направление `TX`/`RX`, тип, длину и байты в hex. Например, `[0001] TX Aarq (42 bytes): 6028...`. При HDLC кадр AARQ выводится целиком, включая данные аутентификации; не публикуйте такой лог без проверки. Кадры ACTION аутентификации и AARQ при Wrapper остаются скрытыми. Отдельные чтения TCP-потока не увеличивают счётчик.
+Консоль показывает обмен: для Wrapper — полные DLMS APDU, для HDLC — кадры SNRM/UA/I/RR. Каждое сообщение получает номер, направление `TX`/`RX`, тип, длину и байты в hex. Например, `[0001] TX Aarq (42 bytes): 6028...`. При HDLC кадр AARQ выводится целиком, включая данные аутентификации; не публикуйте такой лог без проверки. Кадры ACTION аутентификации и AARQ при Wrapper остаются скрытыми. Отдельные чтения байтового потока не увеличивают счётчик.
 
 После AARE приложение показывает объявленное прибором количество записей `object_list`, затем выводит каждую проверенную запись с номером, OBIS, классом и версией по мере получения GET-блоков. Итоговый JSON сохраняется только после завершения и проверки всего списка.
 
@@ -23,7 +51,7 @@ dotnet run --project examples/EMCL.Examples -c Release
 
 Версия Association LN задаётся явно в `association.version` (1 или 3) и должна соответствовать реальной ассоциации прибора. Она определяет интерпретацию прав. `logicalName` выбирает объект ассоциации. `logicalDeviceId` и `associationId` — локальные имена каталога и снимка прав, не адреса подключения.
 
-`connectTimeoutSeconds` ограничивает установление TCP-соединения, `requestTimeoutSeconds` — полный обмен, включая все GET-блоки. `limits` задаёт границы размера, вложенности, коллекций и числа блоков. Для чтения достаточно `"conformance": "Get, BlockTransferWithGet"`.
+`connectTimeoutSeconds` ограничивает установление TCP-соединения или открытие Serial-порта, `requestTimeoutSeconds` — полный обмен, включая все GET-блоки. `limits` задаёт границы размера, вложенности, коллекций и числа блоков. Для чтения достаточно `"conformance": "Get, BlockTransferWithGet"`.
 
 Для точного повторения набора битов из чужого AARQ задайте в `association` поле `"advertisedConformanceHex": "621EDF"`. Оно меняет 24-битное предложение Conformance в AARQ. Поле `conformance` по-прежнему перечисляет операции, которые реализует клиент; каждый его бит должен входить в предложенную маску. Именованные флаги остальных сервисов доступны в `DlmsConformance`, но их операции пока не реализованы.
 
@@ -54,7 +82,7 @@ dotnet run --project examples/EMCL.Examples -c Release
 
 ## Содержимое экспорта
 
-Корень содержит `schemaVersion` (сейчас 3), `exportedAtUtc`, `source`, согласованные параметры `negotiated`, `objectCount`, `objects` и `warnings`. `source` записывает выбранный транспорт и соответствующие ему адреса.
+Корень содержит `schemaVersion` (сейчас 3), `exportedAtUtc`, `source`, согласованные параметры `negotiated`, `objectCount`, `objects` и `warnings`. `source` записывает выбранный транспорт и соответствующие ему адреса. Для Serial это `HdlcSerial` или `WrapperSerial`, параметры порта находятся в `source.serial`, а `host`/`tcpPort` равны `null`.
 
 Если прибор возвращает абсолютно одинаковую запись `object_list` несколько раз, можно включить `"ignoreIdenticalObjectListEntries": true` в секции `association`. Экспорт сохранит уникальную запись и добавит предупреждение в `warnings`. Записи с одинаковым OBIS, но различающимся содержимым, по-прежнему вызывают ошибку импорта.
 

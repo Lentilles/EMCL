@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.IO.Ports;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -23,7 +24,10 @@ internal static class ConfigurationFile
         {
             new JsonStringEnumConverter<ClientAuthentication>(allowIntegerValues: false),
             new JsonStringEnumConverter<DlmsConformance>(allowIntegerValues: false),
-            new JsonStringEnumConverter<MeterTransport>(allowIntegerValues: false)
+            new JsonStringEnumConverter<MeterTransport>(allowIntegerValues: false),
+            new JsonStringEnumConverter<Parity>(allowIntegerValues: false),
+            new JsonStringEnumConverter<StopBits>(allowIntegerValues: false),
+            new JsonStringEnumConverter<Handshake>(allowIntegerValues: false)
         }
     };
 
@@ -58,11 +62,7 @@ internal static class ConfigurationFile
         ArgumentNullException.ThrowIfNull(settings.Limits);
         settings.Limits.Validate();
         var connection = settings.Channel.Connection;
-        ArgumentException.ThrowIfNullOrWhiteSpace(connection.Host);
-        if (connection.TcpPort is <= 0 or > ushort.MaxValue)
-        {
-            throw new ArgumentException("channel.connection.tcpPort must be a valid nonzero TCP port.");
-        }
+        connection.Validate();
 
         switch (settings.Channel.Framing)
         {

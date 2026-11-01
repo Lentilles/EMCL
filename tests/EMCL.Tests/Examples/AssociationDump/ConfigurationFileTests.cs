@@ -27,7 +27,7 @@ public sealed class ConfigurationFileTests
         string path = Path.Combine(AppContext.BaseDirectory, DefaultConfigurationFile.ExampleFileName);
         var loaded = await ConfigurationFile.LoadAsync(path, TestContext.Current.CancellationToken);
         Assert.IsType<WrapperFramingSettings>(loaded.Settings.Channel.Framing);
-        Assert.Equal("127.0.0.1", loaded.Settings.Channel.Connection.Host);
+        Assert.Equal("127.0.0.1", Assert.IsType<TcpConnectionSettings>(loaded.Settings.Channel.Connection).Host);
     }
 
     [Fact]
@@ -100,7 +100,11 @@ public sealed class ConfigurationFileTests
         {
             Channel = settings.Channel with
             {
-                Framing = framing with { ServerPhysicalAddress = null, ExtendedAddress = true }
+                Framing = framing with
+                {
+                    ServerPhysicalAddress = null,
+                    ExtendedAddress = true
+                }
             }
         };
         Assert.Throws<ArgumentException>(() => ConfigurationFile.Validate(invalid, Path.GetTempPath()));
@@ -213,7 +217,7 @@ public sealed class ConfigurationFileTests
         var valid = ExportTestData.Configuration("unused.json");
         var invalid = new[]
         {
-            valid with { Channel = valid.Channel with { Connection = valid.Channel.Connection with { TcpPort = 0 } } },
+            valid with { Channel = valid.Channel with { Connection = new TcpConnectionSettings { Host = "127.0.0.1", TcpPort = 0 } } },
             valid with { Association = valid.Association with { Version = 2 } },
             valid with { Association = valid.Association with { Password = "must-not-be-printed" } },
             valid with { Association = valid.Association with { Authentication = ClientAuthentication.Low, Password = "x", PasswordHex = "78" } },

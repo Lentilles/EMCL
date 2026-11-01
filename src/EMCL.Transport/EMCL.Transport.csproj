@@ -4,5 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../EMCL.Core/EMCL.Core.csproj" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.5" />
+    <InternalsVisibleTo Include="EMCL.Tests" />
   </ItemGroup>
 </Project>

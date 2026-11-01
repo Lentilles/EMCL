@@ -18,13 +18,20 @@ internal static class AssociationDocumentFactory
         var association = settings.Association;
         var wrapper = framing as WrapperFramingSettings;
         var hdlc = framing as HdlcFramingSettings;
-        var source = new AssociationSource(connection.Host, connection.TcpPort,
-            wrapper != null ? "WrapperTcp" : "HdlcTcp",
+        var tcp = connection as TcpConnectionSettings;
+        var source = new AssociationSource(tcp?.Host, tcp?.TcpPort,
+            $"{(wrapper != null ? "Wrapper" : "Hdlc")}{connection.Kind}",
             wrapper?.ClientPort, wrapper?.ServerPort,
             hdlc?.ClientAddress, hdlc?.ServerLogicalAddress, hdlc?.ServerPhysicalAddress,
             imported.Access.AssociationVersion,
             configuration.AssociationName.ToString(), imported.Catalog.LogicalDeviceId, imported.Access.AssociationId,
-            association.Authentication.ToString());
+            association.Authentication.ToString())
+        {
+            Serial = connection is SerialConnectionSettings serial
+                ? new(serial.PortName, serial.BaudRate, serial.DataBits, serial.Parity.ToString(),
+                    serial.StopBits.ToString(), serial.Handshake.ToString(), serial.DtrEnable, serial.RtsEnable)
+                : null
+        };
         var negotiation = new NegotiationDocument(negotiated.DlmsVersion,
             Enum.GetValues<DlmsConformance>().Where(flag => flag != DlmsConformance.None && (negotiated.Conformance & flag) == flag)
                 .Select(flag => flag.ToString()).ToArray(), negotiated.ClientMaxReceivePduSize, negotiated.ServerMaxReceivePduSize);

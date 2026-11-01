@@ -16,7 +16,7 @@ internal static class ExportTestData
     {
         Channel = new()
         {
-            Connection = new()
+            Connection = new TcpConnectionSettings
             {
                 Host = "127.0.0.1",
                 TcpPort = 4059

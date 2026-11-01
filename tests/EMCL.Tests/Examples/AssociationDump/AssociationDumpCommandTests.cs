@@ -31,14 +31,14 @@ public sealed class AssociationDumpCommandTests
         {
             Channel = settings.Channel with
             {
-                Connection = settings.Channel.Connection with
+                Connection = (TcpConnectionSettings)settings.Channel.Connection with
                 {
                     TcpPort = ((IPEndPoint)listener.LocalEndpoint).Port
                 }
             },
             Association = settings.Association with
             {
-                                Version = version,
+                Version = version,
                 RequestTimeoutSeconds = 3
             }
         };

@@ -4,9 +4,18 @@ namespace EMCL.Examples.AssociationDump.Configuration;
 
 internal sealed record LegacyMeterConfiguration
 {
-    public required LegacyConnectionSettings Connection { get; init; }
-    public required AssociationSettings Association { get; init; }
-    public required OutputSettings Output { get; init; }
+    public required LegacyConnectionSettings Connection
+    {
+        get; init;
+    }
+    public required AssociationSettings Association
+    {
+        get; init;
+    }
+    public required OutputSettings Output
+    {
+        get; init;
+    }
     public ProtocolLimits Limits { get; init; } = new();
 
     internal MeterConfiguration Upgrade()
@@ -16,7 +25,7 @@ internal sealed record LegacyMeterConfiguration
         {
             Channel = new()
             {
-                Connection = new()
+                Connection = new TcpConnectionSettings
                 {
                     Host = Connection.Host,
                     TcpPort = Connection.TcpPort,
@@ -49,13 +58,25 @@ internal sealed record LegacyMeterConfiguration
 internal sealed record LegacyConnectionSettings
 {
     public MeterTransport Transport { get; init; } = MeterTransport.WrapperTcp;
-    public required string Host { get; init; }
-    public required int TcpPort { get; init; }
+    public required string Host
+    {
+        get; init;
+    }
+    public required int TcpPort
+    {
+        get; init;
+    }
     public ushort ClientWrapperPort { get; init; } = WrapperConnectionDefaults.ClientPort;
     public ushort ServerWrapperPort { get; init; } = WrapperConnectionDefaults.ServerPort;
     public byte HdlcClientAddress { get; init; } = HdlcConnectionDefaults.ClientAddress;
     public ushort HdlcServerLogicalAddress { get; init; } = HdlcConnectionDefaults.ServerLogicalAddress;
-    public ushort? HdlcServerPhysicalAddress { get; init; }
-    public bool HdlcExtendedAddress { get; init; }
+    public ushort? HdlcServerPhysicalAddress
+    {
+        get; init;
+    }
+    public bool HdlcExtendedAddress
+    {
+        get; init;
+    }
     public double ConnectTimeoutSeconds { get; init; } = 10;
 }

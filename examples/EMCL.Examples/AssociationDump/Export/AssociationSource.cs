@@ -1,7 +1,14 @@
 namespace EMCL.Examples.AssociationDump.Export;
 
-internal sealed record AssociationSource(string Host, int TcpPort, string Transport,
+internal sealed record AssociationSource(string? Host, int? TcpPort, string Transport,
     ushort? ClientWrapperPort, ushort? ServerWrapperPort, byte? HdlcClientAddress,
     ushort? HdlcServerLogicalAddress, ushort? HdlcServerPhysicalAddress,
     byte AssociationVersion, string AssociationObisCode, string LogicalDeviceId,
-    string AssociationId, string Authentication);
+    string AssociationId, string Authentication)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public SerialConnectionDocument? Serial
+    {
+        get; init;
+    }
+}

@@ -1,0 +1,35 @@
+{
+  "channel": {
+    "connection": {
+      "kind": "Serial",
+      "portName": "COM3",
+      "baudRate": 9600,
+      "dataBits": 8,
+      "parity": "None",
+      "stopBits": "One",
+      "handshake": "None",
+      "dtrEnable": false,
+      "rtsEnable": false,
+      "connectTimeoutSeconds": 10
+    },
+    "framing": {
+      "kind": "Hdlc",
+      "clientAddress": 16,
+      "serverLogicalAddress": 1
+    }
+  },
+  "association": {
+    "version": 1,
+    "logicalName": "0.0.40.0.0.255",
+    "logicalDeviceId": "meter-1",
+    "associationId": "public",
+    "authentication": "None",
+    "requestTimeoutSeconds": 30,
+    "maxReceivePduSize": 1024,
+    "conformance": "Get, BlockTransferWithGet"
+  },
+  "output": {
+    "path": "association.json",
+    "overwrite": true
+  }
+}

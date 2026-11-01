@@ -2,7 +2,7 @@
 
 Расширяемая библиотека DLMS/COSEM для .NET 10. Универсальная модель объектов, бинарные кодеки, локальное выполнение операций, клиентская LN-сессия и независимые адаптеры кадров и транспорта.
 
-Библиотечные сборки не имеют сторонних NuGet-зависимостей. Тесты используют xUnit v3 и Microsoft Testing Platform. Для сборки нужен стабильный .NET SDK 10; политика выбора SDK и тестового движка задана в `global.json`.
+`EMCL.Transport` использует пакет Microsoft `System.IO.Ports` для Serial; остальные библиотечные проекты не имеют внешних NuGet-зависимостей. Тесты используют xUnit v3 и Microsoft Testing Platform. Для сборки нужен стабильный .NET SDK 10; политика выбора SDK и тестового движка задана в `global.json`.
 
 ```sh
 dotnet restore EMCL.slnx --disable-parallel
@@ -27,7 +27,7 @@ dotnet pack EMCL.slnx -c Release --no-restore --no-build --disable-build-servers
 
 ## Экспорт ассоциации реального прибора
 
-Консольный пример подключается по Wrapper/TCP или через HDLC/TCP-шлюз, читает `object_list` (в том числе GET-блоками) и сохраняет JSON с OBIS-кодами, классами, атрибутами, методами и исходными/расшифрованными правами доступа.
+Консольный пример подключается по Wrapper/TCP, через HDLC/TCP-шлюз или напрямую по Serial, читает `object_list` (в том числе GET-блоками) и сохраняет JSON с OBIS-кодами, классами, атрибутами, методами и исходными/расшифрованными правами доступа.
 
 ```sh
 cp examples/EMCL.Examples/meter.example.json examples/EMCL.Examples/meter.local.json
@@ -36,7 +36,7 @@ dotnet run --project examples/EMCL.Examples -c Release
 
 Для запуска из IDE достаточно выбрать `EMCL.Examples` как запускаемый проект и нажать **Run**. Без аргументов приложение предпочитает `meter.local.json`, затем `meter.example.json`. Перед запуском отредактируйте транспорт, адреса, TCP-порт, версию ассоциации и аутентификацию в конфиге. Полный путь результата печатается в консоли. Путь результата и разрешение перезаписи также задаются в конфиге. Относительный путь считается от каталога копии конфига рядом с приложением. Поля пароля не включаются в экспорт.
 
-[Параметры конфигурации и схема JSON](examples/EMCL.Examples/README.md) · [Шаблон конфигурации](examples/EMCL.Examples/meter.example.json).
+[Параметры конфигурации и схема JSON](examples/EMCL.Examples/README.md) · [Шаблон TCP](examples/EMCL.Examples/meter.example.json) · [Шаблон Serial](examples/EMCL.Examples/meter.serial.example.json).
 
 ## Структура репозитория
 
@@ -69,7 +69,7 @@ docs/                       Матрица возможностей и исто�
 | `EMCL.Objects` | Каталог, импорт ассоциации, диспетчер, локальные обработчики |
 | `EMCL.Framing.Hdlc` | Кадры type 3, CRC, LLC, сборка сегментов |
 | `EMCL.Framing.Wrapper` | Wrapper v1 |
-| `EMCL.Transport` | `IByteTransport`, `IApduChannel`, `TcpByteTransport`, `StreamByteTransport`, канал с внедряемым кодеком кадров |
+| `EMCL.Transport` | `IByteTransport`, `IApduChannel`, `TcpByteTransport`, `SerialByteTransport`, `StreamByteTransport`, канал с внедряемым кодеком кадров |
 | `EMCL` | Компоновка определений классов, адаптеров, Wrapper/HDLC APDU-каналов и endpoint |
 
 `Protocol` не ссылается на транспорт, HDLC или Wrapper. Стандартные определения и обработчики находятся в `Objects`; каждый составленный прибор получает собственные экземпляры обработчиков.
@@ -203,6 +203,7 @@ device.Handlers.ForInstance(device.Catalog.LogicalDeviceId, target.LogicalName, 
 using EMCL.Core.Objects;
 using EMCL.Core.Operations;
 using EMCL.Framing;
+using EMCL.Framing.Hdlc.Frames;
 using EMCL.Messaging;
 using EMCL.Protocol.Apdu;
 using EMCL.Objects.Definitions;
@@ -221,7 +222,19 @@ var apdu = await endpoint.ReceiveAsync();
 
 Для HDLC замените только `Framing` на `new ApduFraming.Hdlc(HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(5))`. Канал выполняет SNRM/UA, ведёт порядковые номера, подтверждает входящие сегменты RR и отправляет DISC при освобождении. Он не делает повторов и пока требует, чтобы исходящий APDU помещался в один согласованный information frame. Для низкоуровневого управления кадрами доступны `HdlcCodec` и `HdlcApduAdapter`.
 
-Для собственного serial или иного соединения реализуйте `IByteTransportFactory.ConnectAsync`, возвращающий пользовательский `IByteTransport`, и передайте фабрику в `ApduChannelSettings.Connection`. `ReadAsync` транспорта возвращает число принятых байтов (ноль только при EOF), `WriteAsync` передаёт весь буфер либо выбрасывает исключение, `DisposeAsync` освобождает соединение. Канал владеет полученным транспортом. Для уже открытого потока доступен `StreamByteTransport` и низкоуровневые методы `ApduChannels.Wrapper`/`ConnectHdlcAsync`. Если источник уже отдаёт готовые APDU, реализуйте `IApduChannel` напрямую.
+Для прямого Serial-подключения используйте `SerialByteTransportFactory`:
+
+```csharp
+var settings = new ApduChannelSettings(
+    new SerialByteTransportFactory(
+        new SerialPortSettings("COM3", BaudRate: 9600), TimeSpan.FromSeconds(5)),
+    new ApduFraming.Hdlc(HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(5)));
+await using var channel = await ApduChannels.ConnectAsync(settings, cancellationToken);
+```
+
+`PortName` принимает имя ОС: `COM3` в Windows, `/dev/ttyUSB0` в Linux или `/dev/cu.usbserial-...` в macOS. `SerialPortSettings` задаёт скорость, число бит, чётность, стоп-биты, flow control, DTR и RTS; по умолчанию 9600 8N1 без flow control. Канал владеет портом и закрывает его при освобождении. Отмена активного чтения или записи тоже закрывает порт; для продолжения откройте новое соединение. Таймаут открытия возвращается без ожидания зависшего нативного открытия; если оно завершится позже, порт будет закрыт. IEC 62056-21 sign-on и автоматическое переключение скорости не выполняются. Консольный шаблон: `examples/EMCL.Examples/meter.serial.example.json`.
+
+Для иного соединения реализуйте `IByteTransportFactory.ConnectAsync`, возвращающий пользовательский `IByteTransport`, и передайте фабрику в `ApduChannelSettings.Connection`. `ReadAsync` транспорта возвращает число принятых байтов (ноль только при EOF), `WriteAsync` передаёт весь буфер либо выбрасывает исключение, `DisposeAsync` освобождает соединение. Канал владеет полученным транспортом. Для уже открытого потока доступен `StreamByteTransport` и низкоуровневые методы `ApduChannels.Wrapper`/`ConnectHdlcAsync`. Если источник уже отдаёт готовые APDU, реализуйте `IApduChannel` напрямую.
 
 `IByteTransport.WriteAsync` обязан записать весь буфер либо завершиться исключением. `IApduChannel.ReceiveAsync` возвращает один завершённый APDU с принадлежащими результату байтами; `null` означает чистый EOF. Datagram-транспорт может реализовать `IApduChannel` напрямую. Канал кадров сохраняет неполные данные между чтениями, поддерживает несколько кадров за чтение и общие флаги HDLC. Обрыв кадра или сегментированного сообщения приводит к `EndOfStreamException`.
 
@@ -263,7 +276,7 @@ await client.ReleaseAsync(cancellationToken);
 
 `ReadNotificationsAsync` принимает согласованные DataNotification независимо от ожидающих запросов. Приложение должно опустошать буфер; переполнение завершает сессию с явной ошибкой. Отмена перечисления уведомлений не отменяет сессию.
 
-Настройки `LnAssociationOptions` поддерживают отсутствие аутентификации, LLS и HLS High (AES-128 challenge-response) через неизменяемые байты `Password`. HLS High вызывает метод Association LN и проверяет ответ до открытия сессии. Для другого механизма реализуйте `IClientAssociationNegotiator` и `IClientHighLevelAuthenticator`; для представления APDU — `IIncrementalCodec<DlmsApdu>`; весь клиент заменяется через `IDlmsClientSession`. Защищённые APDU требуют отдельной реализации. Готовое открытие Serial, полный жизненный цикл HDLC с ARQ и повторы остаются следующими этапами.
+Настройки `LnAssociationOptions` поддерживают отсутствие аутентификации, LLS и HLS High (AES-128 challenge-response) через неизменяемые байты `Password`. HLS High вызывает метод Association LN и проверяет ответ до открытия сессии. Для другого механизма реализуйте `IClientAssociationNegotiator` и `IClientHighLevelAuthenticator`; для представления APDU — `IIncrementalCodec<DlmsApdu>`; весь клиент заменяется через `IDlmsClientSession`. Защищённые APDU требуют отдельной реализации. Полный жизненный цикл HDLC с ARQ и повторы остаются следующими этапами.
 
 Полный исполняемый пример с локальным объектным пайплайном: [ClientSessionExample.cs](examples/EMCL.Examples/Client/ClientSessionExample.cs). Тестовый peer в примере демонстрирует обмен и не является готовой серверной сессией.
 
