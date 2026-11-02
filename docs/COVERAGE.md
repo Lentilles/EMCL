@@ -67,6 +67,12 @@ Profile Generic stores row values explicitly. Compact representation is preserve
 
 The session is single-use and does not establish a transport connection. Invalid correlation, a duplicate response, a disconnect, an unsupported message, exceeded PDU/GET limits, or cancellation after a send attempt terminates the association. Meter errors are preserved as remote operation errors and allow further exchanges. GET blocks start at 1; order and invoke ID are checked separately for each request. SET/ACTION block transfer and GBT are not proposed during negotiation.
 
+If the peer closes after delivering the final GET block, the association faults but
+the completed response can finish local decoding and catalog export. Caller
+cancellation and the exchange deadline still apply; a transfer without a final
+block fails. Console progress and frame traces share synchronized output writers
+so concurrent writes preserve complete log lines.
+
 Release stops accepting new operations and drains existing ones. Dispose cancels operations, waits for reads/writes, and disposes the channel according to LeaveOpen. Custom channels must honor the cancellation contract for shutdown to complete correctly. An operation deadline covers all of its GET blocks; the release deadline includes waiting for in-flight operations.
 
 ## Verification

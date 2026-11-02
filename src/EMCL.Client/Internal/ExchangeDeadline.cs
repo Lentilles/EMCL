@@ -5,6 +5,7 @@ namespace EMCL.Client.Internal;
 internal sealed class ExchangeDeadline : IDisposable
 {
     private readonly CancellationTokenSource timeout;
+    private readonly CancellationTokenSource processing;
     private readonly CancellationTokenSource linked;
     private readonly CancellationToken caller;
 
@@ -12,10 +13,14 @@ internal sealed class ExchangeDeadline : IDisposable
     {
         this.caller = caller;
         timeout = new(options.RequestTimeout, options.TimeProvider);
-        linked = CancellationTokenSource.CreateLinkedTokenSource(caller, timeout.Token, lifetime);
+        processing = CancellationTokenSource.CreateLinkedTokenSource(caller, timeout.Token);
+        linked = CancellationTokenSource.CreateLinkedTokenSource(processing.Token, lifetime);
     }
 
     internal CancellationToken Token => linked.Token;
+
+    // A fully received response still honors the caller and deadline after the peer closes.
+    internal CancellationToken ProcessingToken => processing.Token;
 
     internal Exception TranslateCancellation(Exception sessionFailure)
     {
@@ -30,6 +35,7 @@ internal sealed class ExchangeDeadline : IDisposable
     public void Dispose()
     {
         linked.Dispose();
+        processing.Dispose();
         timeout.Dispose();
     }
 }

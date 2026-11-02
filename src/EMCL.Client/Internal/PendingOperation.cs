@@ -75,8 +75,16 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
         waiting = true;
     }
 
-    internal async ValueTask<DlmsApdu> ReceiveAsync(CancellationToken cancellationToken)
+    internal async ValueTask<DlmsApdu> ReceiveAsync(CancellationToken cancellationToken,
+        CancellationToken processingToken)
     {
+        processingToken.ThrowIfCancellationRequested();
+        // EOF may cancel the session after a validated response was already buffered.
+        if (responses.Reader.TryRead(out var buffered))
+        {
+            return buffered;
+        }
+
         try
         {
             return await responses.Reader.ReadAsync(cancellationToken).ConfigureAwait(false);

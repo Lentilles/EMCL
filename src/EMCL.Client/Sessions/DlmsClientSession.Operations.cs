@@ -83,7 +83,8 @@ public sealed partial class DlmsClientSession
             {
                 await SendAsync(new LnRequest(pending.Invoke, operation), SendLimit(), deadline.Token,
                     () => attempted = true).ConfigureAwait(false);
-                return await ReceiveOperationAsync(pending, onGetBlock, deadline.Token).ConfigureAwait(false);
+                return await ReceiveOperationAsync(pending, onGetBlock, deadline.Token,
+                    deadline.ProcessingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -199,9 +200,10 @@ public sealed partial class DlmsClientSession
     }
 
     private async ValueTask<LnResponse> ReceiveOperationAsync(PendingOperation pending,
-        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask>? onGetBlock, CancellationToken cancellationToken)
+        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask>? onGetBlock, CancellationToken cancellationToken,
+        CancellationToken processingToken)
     {
-        var response = await pending.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+        var response = await pending.ReceiveAsync(cancellationToken, processingToken).ConfigureAwait(false);
         if (response is LnResponse normal)
         {
             if (normal.Kind == CosemOperationKind.Read && normal.Result.Error == CosemError.Success && normal.Result.Value == null)
@@ -235,7 +237,8 @@ public sealed partial class DlmsClientSession
 
             if (onGetBlock != null)
             {
-                await onGetBlock(block.Data.ToArray(), cancellationToken).ConfigureAwait(false);
+                await onGetBlock(block.Data.ToArray(), assembled.Complete ? processingToken : cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             if (assembled.Complete)
@@ -256,7 +259,7 @@ public sealed partial class DlmsClientSession
 
             // GET-next acknowledges the last received block, rather than naming the next block number.
             await SendAsync(new GetNextRequest(pending.Invoke, block.BlockNumber), SendLimit(), cancellationToken).ConfigureAwait(false);
-            response = await pending.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+            response = await pending.ReceiveAsync(cancellationToken, processingToken).ConfigureAwait(false);
         }
     }
 

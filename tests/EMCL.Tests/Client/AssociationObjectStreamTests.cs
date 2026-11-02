@@ -78,6 +78,90 @@ public sealed class AssociationObjectStreamTests
         await Assert.ThrowsAsync<AssociationImportException>(async () => await iterator.MoveNextAsync());
     }
 
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    public async Task HandlesPeerClosureWhileObjectListConsumerIsPaused(bool finalBlock, bool cancelCaller,
+        bool expireDeadline)
+    {
+        var pair = DuplexApduChannel.CreatePair();
+        await using var peer = new SessionPeer(pair.Server);
+        var clock = new ControlledDeadlineProvider();
+        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
+        {
+            TimeProvider = clock
+        });
+        await peer.AssociateAsync(client);
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+
+        var codec = new AxdrCodec();
+        var first = Entry(3, 0, "1.0.1.8.0.255");
+        var second = Entry(9000, 5, "0.0.96.1.0.255");
+        byte[] bytes = codec.EncodeBytes(DlmsValue.Array(first, second));
+        int split = 2 + codec.EncodeBytes(first).Length;
+        var opening = client.OpenObjectListAsync(new EmclBuilder().CreateImporter(), AssociationLnMembers.Version1,
+            cancellationToken: caller.Token).AsTask();
+        var request = await peer.ReadAsync<LnRequest>();
+        await peer.SendAsync(new GetBlockResponse(request.InvokeIdAndPriority, false, 1,
+            bytes[..split].ToImmutableArray()));
+        await using var stream = await opening;
+
+        await peer.ReadAsync<GetNextRequest>();
+        await peer.SendAsync(new GetBlockResponse(request.InvokeIdAndPriority, false, 2,
+            bytes[split..(split + 1)].ToImmutableArray()));
+        await peer.ReadAsync<GetNextRequest>();
+
+        // The second block fills the bounded queue; the final block must wait for the consumer.
+        await peer.SendAsync(new GetBlockResponse(request.InvokeIdAndPriority, finalBlock, 3,
+            bytes[(split + 1)..].ToImmutableArray()));
+        await using var notifications = client.ReadNotificationsAsync(TestContext.Current.CancellationToken)
+            .GetAsyncEnumerator(TestContext.Current.CancellationToken);
+        var sessionEnded = notifications.MoveNextAsync().AsTask();
+        await peer.DisposeAsync();
+        await Assert.ThrowsAsync<EndOfStreamException>(async () =>
+            await sessionEnded.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        Assert.Equal(ClientSessionState.Faulted, client.State);
+
+        if (cancelCaller)
+        {
+            await caller.CancelAsync();
+        }
+        if (expireDeadline)
+        {
+            clock.ExpireDeadlines();
+        }
+
+        var names = new List<LogicalName>();
+        async Task ReadObjectsAsync()
+        {
+            await foreach (var entry in stream.WithCancellation(caller.Token))
+            {
+                names.Add(entry.LogicalName);
+            }
+        }
+
+        if (cancelCaller)
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(ReadObjectsAsync);
+        }
+        else if (expireDeadline)
+        {
+            await Assert.ThrowsAsync<TimeoutException>(ReadObjectsAsync);
+        }
+        else if (!finalBlock)
+        {
+            await Assert.ThrowsAsync<EndOfStreamException>(ReadObjectsAsync);
+        }
+        else
+        {
+            await ReadObjectsAsync();
+            Assert.Equal([LogicalName.Parse("1.0.1.8.0.255"), LogicalName.Parse("0.0.96.1.0.255")], names);
+            Assert.Equal(2, stream.CurrentCount);
+        }
+    }
+
     [Fact]
     public async Task WaitsForAnArrayHeaderSplitAcrossBlocks()
     {

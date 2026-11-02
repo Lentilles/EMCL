@@ -17,6 +17,9 @@ internal static class AssociationDumpCommand
     internal static async Task RunAsync(string configurationPath, TextWriter output, TextWriter error,
         CancellationToken cancellationToken)
     {
+        // Frame tracing and progress reporting share writers across the receive loop and caller.
+        output = TextWriter.Synchronized(output);
+        error = TextWriter.Synchronized(error);
         var configuration = await ConfigurationFile.LoadAsync(configurationPath, cancellationToken);
         var connection = configuration.Settings.Channel.Connection;
         var framing = configuration.Settings.Channel.Framing;
