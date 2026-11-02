@@ -81,6 +81,11 @@ public sealed partial class DlmsClientSession
             using var deadline = new ExchangeDeadline(options, cancellationToken, lifetimeToken);
             try
             {
+                if (operation.Kind == CosemOperationKind.Write)
+                {
+                    return await ExecuteSetAsync(operation, pending, deadline, () => attempted = true).ConfigureAwait(false);
+                }
+
                 await SendAsync(new LnRequest(pending.Invoke, operation), SendLimit(), deadline.Token,
                     () => attempted = true).ConfigureAwait(false);
                 return await ReceiveOperationAsync(pending, onGetBlock, deadline.Token,
@@ -88,7 +93,7 @@ public sealed partial class DlmsClientSession
             }
             catch (OperationCanceledException)
             {
-                var error = deadline.TranslateCancellation(SessionFailure());
+                var error = UnconfirmedWrite(operation, attempted, deadline.TranslateCancellation(SessionFailure()));
                 if (attempted)
                 {
                     Fault(error);
@@ -99,11 +104,13 @@ public sealed partial class DlmsClientSession
             }
             catch (Exception error)
             {
+                var reported = UnconfirmedWrite(operation, attempted, error);
                 if (attempted)
                 {
-                    Fault(error);
+                    Fault(reported);
                 }
 
+                ExceptionDispatchInfo.Capture(reported).Throw();
                 throw;
             }
         }
@@ -125,6 +132,9 @@ public sealed partial class DlmsClientSession
             slots.Release();
         }
     }
+
+    private static Exception UnconfirmedWrite(CosemOperation operation, bool attempted, Exception error) =>
+        operation.Kind == CosemOperationKind.Write && attempted ? new DlmsWriteUnconfirmedException(error) : error;
 
     /// <inheritdoc />
     public async ValueTask<DlmsValue> GetAsync(ushort classId, LogicalName logicalName, sbyte attribute,

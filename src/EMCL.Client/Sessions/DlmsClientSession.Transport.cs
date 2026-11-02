@@ -134,6 +134,7 @@ public sealed partial class DlmsClientSession
             {
                 LnResponse response => response.InvokeIdAndPriority,
                 GetBlockResponse block => block.InvokeIdAndPriority,
+                SetBlockResponse block => block.InvokeIdAndPriority,
                 _ => throw new DlmsProtocolException("The peer sent an unexpected application service.")
             };
             byte id = (byte)(invoke & InvokeIdEncoding.IdMask);

@@ -17,6 +17,8 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
     private bool blocksStarted;
     private const uint FirstBlockNumber = 1;
     private uint expectedBlockNumber = FirstBlockNumber;
+    private bool setBlocksStarted;
+    private bool lastSetBlock;
 
     internal byte Invoke { get; } = invoke;
     internal byte Id => (byte)(Invoke & InvokeIdEncoding.IdMask);
@@ -33,7 +35,21 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
         switch (response)
         {
             case LnResponse normal when normal.InvokeIdAndPriority == Invoke && normal.Kind == kind && !blocksStarted:
+                if (setBlocksStarted && normal.Result.Error == CosemError.Success)
+                {
+                    throw new DlmsProtocolException("A SET block transfer requires a final block result.");
+                }
+
                 final = true;
+                break;
+            case SetBlockResponse block when block.InvokeIdAndPriority == Invoke && kind == CosemOperationKind.Write && setBlocksStarted:
+                if (block.BlockNumber != expectedBlockNumber || lastSetBlock && !block.Result.HasValue
+                    || !lastSetBlock && block.Result == CosemError.Success)
+                {
+                    throw new DlmsProtocolException("The SET block acknowledgement number or final result is invalid.");
+                }
+
+                final = block.Result.HasValue;
                 break;
             case GetBlockResponse block when block.InvokeIdAndPriority == Invoke && kind == CosemOperationKind.Read:
                 if (block.BlockNumber != expectedBlockNumber)
@@ -63,6 +79,20 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
         {
             responses.Writer.TryComplete();
         }
+    }
+
+    // Called under the session gate before sending each block, so immediate replies can be correlated.
+    internal void PrepareSetBlock(uint number, bool last)
+    {
+        if (kind != CosemOperationKind.Write || setBlocksStarted && waiting)
+        {
+            throw new InvalidOperationException("The SET exchange is not ready for a block request.");
+        }
+
+        setBlocksStarted = true;
+        expectedBlockNumber = number;
+        lastSetBlock = last;
+        waiting = true;
     }
 
     internal void PrepareNextBlock()

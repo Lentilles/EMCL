@@ -98,7 +98,7 @@ public sealed class ClientNegotiationTests
         await using var peer = new SessionPeer(pair.Server);
         await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options());
         var request = await peer.AssociateAsync(client);
-        AssertBytesEqual(FromHex("01000000065F1F040000109D0400"), request.UserInformation!.Value.AsSpan());
+        AssertBytesEqual(FromHex("01000000065F1F040000189D0400"), request.UserInformation!.Value.AsSpan());
         AssertBytesEqual(FromHex("60857405080101"), request.ApplicationContext!.Value.AsSpan());
         await peer.ReleaseAsync(client);
     }
@@ -113,7 +113,7 @@ public sealed class ClientNegotiationTests
             Association = new LnAssociationOptions { ResponseAllowed = true }
         });
         var request = await peer.AssociateAsync(client);
-        AssertBytesEqual(FromHex("0100010100065F1F040000109D0400"), request.UserInformation!.Value.AsSpan());
+        AssertBytesEqual(FromHex("0100010100065F1F040000189D0400"), request.UserInformation!.Value.AsSpan());
         await peer.ReleaseAsync(client);
     }
 
@@ -151,7 +151,11 @@ public sealed class ClientNegotiationTests
         await using var peer = new SessionPeer(pair.Server);
         await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
         {
-            Association = new LnAssociationOptions { AcceptUnexpectedBlockTransferWithSet = true }
+            Association = new LnAssociationOptions
+            {
+                Conformance = new LnAssociationOptions().Conformance & ~DlmsConformance.BlockTransferWithSet,
+                AcceptUnexpectedBlockTransferWithSet = true
+            }
         });
         var request = await peer.AssociateAsync(client, (DlmsConformance)0x00189D, serverPdu: 2048);
         Assert.NotNull(request);
@@ -185,7 +189,7 @@ public sealed class ClientNegotiationTests
     [InlineData(0, 0, 6, 7, 11, 1, 0x109d)]
     [InlineData(0, 0, 6, 7, 1024, 2, 0x109d)]
     [InlineData(0, 0, 6, 7, 1024, 1, 0x109f)]
-    [InlineData(0, 0, 6, 7, 1024, 1, 0x189d)]
+    [InlineData(0, 0, 6, 7, 1024, 1, 0x149d)]
     public async Task RejectsIncompatibleAareAndRetainsItsDiagnostics(byte result, byte diagnostic,
         byte version, ushort vaa, ushort pdu, byte context, uint conformance)
     {
@@ -309,7 +313,10 @@ public sealed class ClientNegotiationTests
 
     private sealed class RetryCountingChannel(IApduChannel inner) : IApduChannel, IAssociationRequestRetransmission
     {
-        public int RetryCount { get; private set; }
+        public int RetryCount
+        {
+            get; private set;
+        }
         public ValueTask<ReadOnlyMemory<byte>?> ReceiveAsync(CancellationToken cancellationToken = default) =>
             inner.ReceiveAsync(cancellationToken);
         public ValueTask SendAsync(ReadOnlyMemory<byte> apdu, CancellationToken cancellationToken = default) =>

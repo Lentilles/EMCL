@@ -6,13 +6,13 @@ The library is distributed under the [MIT license](LICENSE).
 
 ## Features
 
-- Logical Name client associations: GET/SET/ACTION, selective access, GET block transfer, notifications, and None, LLS, and HLS High (AES-128) authentication.
+- Logical Name client associations: GET/SET/ACTION, selective access, GET and SET block transfer, notifications, and None, LLS, and HLS High (AES-128) authentication.
 - Association LN v1/v3 reading: full catalog import or streaming `object_list` entries with progress reporting.
 - Wrapper and HDLC over TCP, Serial, or a custom transport; console export of the catalog and access rights to JSON.
 - Local models for Data, Register, Extended Register, Demand Register, Register Activation, Clock, Profile Generic, and Association LN; custom classes and handlers.
 - Independent A-XDR, ACSE, and LN APDU codecs with data size and nesting limits.
 
-Short Name, protected APDUs, HLS SHA-256/GMAC, SET/ACTION block transfer, GBT, and a ready-to-use server session are not implemented yet. The HDLC channel performs SNRM/UA setup and I/RR exchange; each outgoing APDU must fit a single negotiated information frame. See the [capability matrix](docs/COVERAGE.md) for details.
+Short Name, protected APDUs, HLS SHA-256/GMAC, ACTION block transfer, GBT, and a ready-to-use server session are not implemented yet. The HDLC channel performs SNRM/UA setup and I/RR exchange; each outgoing APDU must fit a single negotiated information frame. See the [capability matrix](docs/COVERAGE.md) for details.
 
 ## Contents
 
@@ -330,11 +330,11 @@ await foreach (var entry in objects.WithCancellation(cancellationToken))
 
 `TotalCount` includes duplicate entries from the meter. Disposing the stream early cancels an incomplete GET and may move the session to `Faulted`; enumerate the stream to completion before starting further operations.
 
-`SetAsync`, `ActionAsync`, and `ExecuteAsync` are also available. Convenience methods throw `DlmsOperationException` on a meter error; `ExecuteAsync` returns an `LnResponse` with the original result code and a separate ACTION return-data error. A successful GET using block transfer is automatically assembled into one A-XDR value. GET-next acknowledges the last received block number. Catalog import uses an explicitly selected Association LN version; current object values cannot be inferred from the list.
+`SetAsync`, `ActionAsync`, and `ExecuteAsync` are also available. Convenience methods throw `DlmsOperationException` on a meter error; `ExecuteAsync` returns an `LnResponse` with the original result code and a separate ACTION return-data error. A successful GET using block transfer is automatically assembled into one A-XDR value. GET-next acknowledges the last received block number. Oversized SET values use service-specific blocks through the same `SetAsync` or `ExecuteAsync` call, only when `BlockTransferWithSet` is proposed and negotiated. Each block includes headers and its A-XDR length determinant in the PDU check; `MaxMessageBytes` bounds the encoded value and `MaxBlockCount` bounds the complete transfer before the first send. Intermediate acknowledgements do not confirm a write: the final result must match the last block. A remote error terminates the transfer and remains a `DlmsOperationException` from `SetAsync`. Catalog import uses an explicitly selected Association LN version; current object values cannot be inferred from the list.
 
-By default, the session executes one request at a time. `MaxConcurrentRequests` permits up to 16 independent exchanges if the meter supports that load. Responses are matched by invoke ID, service, and the full invoke-id-and-priority byte; writes are serialized, and one background reader handles input. `RequestTimeout` covers the entire exchange, including all GET blocks. Waiting for queue capacity is bounded by the caller's cancellation token. `TimeProvider` allows replacing the deadline time source.
+By default, the session executes one request at a time. `MaxConcurrentRequests` permits up to 16 independent exchanges if the meter supports that load. Responses are matched by invoke ID, service, and the full invoke-id-and-priority byte; writes are serialized, and one background reader handles input. `RequestTimeout` covers the entire exchange, including all GET or SET blocks. Waiting for queue capacity is bounded by the caller's cancellation token. `TimeProvider` allows replacing the deadline time source.
 
-Cancellation before sending preserves the association. Cancellation or a timeout after a send attempt, an invalid response, EOF, or exceeded input limits moves it to `Faulted` and completes all other pending operations. This prevents a delayed response from being reused in a new exchange. There are no automatic retries. A session supports one association: after `Released` or `Faulted`, create a new session on an appropriate channel.
+Cancellation before sending preserves the association. Cancellation or a timeout after a send attempt, an invalid response, EOF, or exceeded input limits moves it to `Faulted` and completes all other pending operations. This prevents a delayed response from being reused in a new exchange. There are no automatic retries. A SET send attempt without a validated final result throws `DlmsWriteUnconfirmedException`, preserving timeout, cancellation, transport, or protocol failure in `InnerException`. The write may have taken effect; read and reconcile the value before retrying on a new session. Cancellation before any send keeps ordinary cancellation semantics. A session supports one association: after `Released` or `Faulted`, create a new session on an appropriate channel.
 
 `ReleaseAsync` stops accepting new operations, drains existing operations, and performs RLRQ/RLRE. `DisposeAsync` cancels and awaits operations and I/O, then disposes the channel; `LeaveOpen = true` leaves the channel to the application. Custom channels must support read and write cancellation. Repeated disposal is safe. After a failure, reusing a channel left open requires explicit application recovery.
 

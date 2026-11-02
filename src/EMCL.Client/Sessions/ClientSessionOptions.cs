@@ -9,10 +9,13 @@ public sealed record ClientSessionOptions
 {
     /// <summary>Gets the association proposal.</summary>
     public LnAssociationOptions Association { get; init; } = new();
-    /// <summary>Gets the timeout for an association, release, or complete operation including all GET blocks; queue waiting uses caller cancellation.</summary>
+    /// <summary>Gets the timeout for an association, release, or complete operation including all GET or SET blocks; queue waiting uses caller cancellation.</summary>
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
     /// <summary>Optional delay before one retransmission of an unanswered AARQ on a channel that supports safe link-layer replay; null disables it.</summary>
-    public TimeSpan? AssociationRetryDelay { get; init; }
+    public TimeSpan? AssociationRetryDelay
+    {
+        get; init;
+    }
     /// <summary>Gets the maximum concurrent operations, from one through the invoke-ID capacity; one is the default.</summary>
     public int MaxConcurrentRequests { get; init; } = 1;
     /// <summary>Gets the bounded number of notifications waiting for application consumption; overflow faults the session.</summary>
@@ -22,7 +25,7 @@ public sealed record ClientSessionOptions
     {
         get; init;
     }
-    /// <summary>Gets the shared limits for APDUs, decoded values, and accumulated GET blocks.</summary>
+    /// <summary>Gets the shared limits for APDUs, decoded values, accumulated GET blocks, and outgoing SET value bytes and block count.</summary>
     public ProtocolLimits Limits { get; init; } = new();
     /// <summary>Gets the time provider used for exchange deadlines.</summary>
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;

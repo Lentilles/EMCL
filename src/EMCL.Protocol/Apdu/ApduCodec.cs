@@ -120,6 +120,33 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
             case GetNextRequest next:
                 WriteGetNextRequest(next, writer);
                 break;
+            case SetFirstBlockRequest first:
+                if (first.Operation.Kind != CosemOperationKind.Write || first.Operation.Value != null)
+                {
+                    throw new ArgumentException("A first SET block requires a write descriptor without a value.");
+                }
+
+                WriteLnRequest(new(first.InvokeIdAndPriority, first.Operation), writer, ref budget,
+                    ApduEncoding.SetFirstBlockChoice);
+                WriteSetBlock(first.LastBlock, first.BlockNumber, first.Data, writer);
+                break;
+            case SetBlockRequest block:
+                WireWriter.Byte(writer, (byte)ApduTag.SetRequest);
+                WireWriter.Byte(writer, ApduEncoding.SetBlockChoice);
+                WireWriter.Byte(writer, block.InvokeIdAndPriority);
+                WriteSetBlock(block.LastBlock, block.BlockNumber, block.Data, writer);
+                break;
+            case SetBlockResponse block:
+                WireWriter.Byte(writer, (byte)ApduTag.SetResponse);
+                WireWriter.Byte(writer, block.Result.HasValue ? ApduEncoding.SetLastBlockResponseChoice : ApduEncoding.SetBlockResponseChoice);
+                WireWriter.Byte(writer, block.InvokeIdAndPriority);
+                if (block.Result.HasValue)
+                {
+                    WireWriter.Byte(writer, (byte)block.Result.Value);
+                }
+
+                WireWriter.U32(writer, block.BlockNumber);
+                break;
             case LnResponse response:
                 WriteLnResponse(response, writer, ref budget);
                 break;
@@ -186,9 +213,17 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
         {
             return new GetNextRequest(invoke, reader.U32());
         }
+        else if (tag == ApduTag.SetRequest && choice == ApduEncoding.SetBlockChoice)
+        {
+            bool last = Presence(ref reader);
+            uint number = reader.U32();
+            return new SetBlockRequest(invoke, last, number,
+                reader.Take(reader.Length(limits.MaxMessageBytes)).ToArray().ToImmutableArray());
+        }
         else
         {
-            if (choice != ApduEncoding.NormalChoice)
+            bool firstSetBlock = tag == ApduTag.SetRequest && choice == ApduEncoding.SetFirstBlockChoice;
+            if (choice != ApduEncoding.NormalChoice && !firstSetBlock)
             {
                 throw new WireException(DecodeStatus.Unsupported, "Only normal LN requests are supported.");
             }
@@ -204,6 +239,14 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
                 if (Presence(ref reader))
                 {
                     selection = new(reader.Byte(), axdr.Read(ref reader, 0, ref budget));
+                }
+
+                if (firstSetBlock)
+                {
+                    bool last = Presence(ref reader);
+                    uint number = reader.U32();
+                    return new SetFirstBlockRequest(invoke, new(kind, classId, name, index, Selection: selection),
+                        last, number, reader.Take(reader.Length(limits.MaxMessageBytes)).ToArray().ToImmutableArray());
                 }
 
                 if (kind == CosemOperationKind.Write)
@@ -223,6 +266,12 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
     private DlmsApdu ReadResponse(ApduTag tag, ref WireReader reader, ref int budget)
     {
         byte choice = reader.Byte(), invoke = reader.Byte();
+        if (tag == ApduTag.SetResponse && choice is ApduEncoding.SetBlockResponseChoice or ApduEncoding.SetLastBlockResponseChoice)
+        {
+            CosemError? result = choice == ApduEncoding.SetLastBlockResponseChoice ? (CosemError)reader.Byte() : null;
+            return new SetBlockResponse(invoke, reader.U32(), result);
+        }
+
         if (tag == ApduTag.GetResponse && choice == ApduEncoding.GetBlockChoice)
         {
             bool last = Presence(ref reader);
@@ -296,11 +345,12 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
         return new InitiateResponse(qos, version, conformance, reader.U16(), reader.U16());
     }
 
-    private void WriteLnRequest(LnRequest request, IBufferWriter<byte> writer, ref int budget)
+    private void WriteLnRequest(LnRequest request, IBufferWriter<byte> writer, ref int budget,
+        byte choice = ApduEncoding.NormalChoice)
     {
         var operation = request.Operation;
         WireWriter.Byte(writer, operation.Kind == CosemOperationKind.Read ? (byte)ApduTag.GetRequest : operation.Kind == CosemOperationKind.Write ? (byte)ApduTag.SetRequest : (byte)ApduTag.ActionRequest);
-        WireWriter.Byte(writer, ApduEncoding.NormalChoice);
+        WireWriter.Byte(writer, choice);
         WireWriter.Byte(writer, request.InvokeIdAndPriority);
         WireWriter.U16(writer, operation.ClassId);
         WireWriter.Bytes(writer, operation.LogicalName.ToBytes());
@@ -327,11 +377,19 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
                 axdr.Write(operation.Selection.Parameters, writer, 0, ref budget);
             }
 
-            if (operation.Kind == CosemOperationKind.Write)
+            if (operation.Kind == CosemOperationKind.Write && choice == ApduEncoding.NormalChoice)
             {
                 axdr.Write(operation.Value ?? throw new ArgumentException("SET requires a value."), writer, 0, ref budget);
             }
         }
+    }
+
+    private static void WriteSetBlock(bool last, uint number, ImmutableArray<byte> data, IBufferWriter<byte> writer)
+    {
+        WireWriter.Byte(writer, last ? AxdrEncoding.True : AxdrEncoding.False);
+        WireWriter.U32(writer, number);
+        WireWriter.Length(writer, data.Length);
+        WireWriter.Bytes(writer, data.AsSpan());
     }
 
     private static void WriteGetNextRequest(GetNextRequest next, IBufferWriter<byte> writer)

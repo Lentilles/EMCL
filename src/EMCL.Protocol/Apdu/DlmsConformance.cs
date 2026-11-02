@@ -24,7 +24,7 @@ public enum DlmsConformance : uint
     Attribute0SupportedWithGet = 0x002000,
     /// <summary>GET responses may use service-specific block transfer.</summary>
     BlockTransferWithGet = 0x001000,
-    /// <summary>SET service-specific block transfer; recognized in a peer response but not implemented by the client.</summary>
+    /// <summary>SET requests may use service-specific block transfer.</summary>
     BlockTransferWithSet = 0x000800,
     /// <summary>ACTION service-specific block transfer.</summary>
     BlockTransferWithAction = 0x000400,

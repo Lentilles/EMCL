@@ -17,6 +17,7 @@
 | Compact-array | Type description, nested structures and arrays, row reading/writing without repeated tags |
 | GET/SET/ACTION | Normal request/response; GET and SET with selective access |
 | GET block transfer | GET-next, response-with-datablock, separate assembly with an explicit lifecycle |
+| SET block transfer | First/subsequent data block requests, block acknowledgements, and final block results |
 | DataNotification | Codec for long invoke ID, optional time, and Data |
 | ACSE | AARQ/AARE/RLRQ/RLRE, definite-length BER, preservation of fields including authentication fields |
 | xDLMS negotiation | InitiateRequest/InitiateResponse and conformance bit-string |
@@ -32,12 +33,13 @@
 | Logical Name client session | AARQ/AARE, conformance and independent PDU limits, RLRQ/RLRE, states, and channel ownership |
 | Client operations | GET/SET/ACTION normal, selective access, up to 16 invoke IDs, one reader and a serialized writer |
 | Client GET block transfer | Automatic GET-next acknowledging the received block number; bounded assembly and validation of one A-XDR value |
+| Client SET block transfer | Automatic first/subsequent data blocks; negotiated support, complete PDU bounds, sequential acknowledgements, and a final data-access result |
 | Console export | Wrapper/TCP and HDLC/TCP gateway (SNRM/UA, I/RR without retries), separate JSON configuration, None/LLS/HLS High, OBIS/classes/members/v1/v3 rights in JSON; atomic saving |
 | Client catalog loading | Reading object_list, including GET blocks, and atomic import with an explicit Association LN version |
 | Client notifications | Separate bounded stream of negotiated DataNotification messages; overflow terminates the session |
 | Deadlines and cancellation | Cover the entire exchange; cancellation after a send attempt faults the association, while queue waiting is canceled separately |
 | Ready-to-use server session, full HDLC link management/ARQ, retry | Future work; the example performs only SNRM/UA and RR |
-| SET/ACTION block transfer, GBT, APDU list variants | Future work; Unsupported during decoding |
+| ACTION block transfer, GBT, APDU list variants | Future work; Unsupported during decoding |
 | Client session authentication | None, LLS, and HLS High through AES-128 challenge-response and Association LN ACTION; AARE response and diagnostic are validated |
 | Protected APDUs, HLS SHA-256/GMAC, and other mechanisms | Require an external implementation; successful authentication is not simulated |
 
@@ -65,7 +67,7 @@ Profile Generic stores row values explicitly. Compact representation is preserve
 
 `EMCL.Client` depends on Core, Protocol, Objects, and Transport. It does not depend on HDLC or Wrapper. ACSE construction/validation policies and the APDU codec can be replaced explicitly; `IDlmsClientSession` allows replacing the entire client.
 
-The session is single-use and does not establish a transport connection. Invalid correlation, a duplicate response, a disconnect, an unsupported message, exceeded PDU/GET limits, or cancellation after a send attempt terminates the association. Meter errors are preserved as remote operation errors and allow further exchanges. GET blocks start at 1; order and invoke ID are checked separately for each request. SET/ACTION block transfer and GBT are not proposed during negotiation.
+The session is single-use and does not establish a transport connection. Invalid correlation, a duplicate response, a disconnect, an unsupported message, exceeded PDU/GET limits, or cancellation after a send attempt terminates the association. Meter errors are preserved as remote operation errors and allow further exchanges. GET and SET blocks start at 1; order and the full invoke octet are checked separately for each request. SET needs a final block response with a result; an early block result or normal SET error aborts the transfer. No SET or block is retried. Missing or invalid confirmation after any SET send attempt raises DlmsWriteUnconfirmedException with the original cause; even a timeout or caller cancellation cannot establish whether the write took effect. ACTION block transfer and GBT are not proposed during negotiation.
 
 If the peer closes after delivering the final GET block, the association faults but
 the completed response can finish local decoding and catalog export. Caller
@@ -73,7 +75,7 @@ cancellation and the exchange deadline still apply; a transfer without a final
 block fails. Console progress and frame traces share synchronized output writers
 so concurrent writes preserve complete log lines.
 
-Release stops accepting new operations and drains existing ones. Dispose cancels operations, waits for reads/writes, and disposes the channel according to LeaveOpen. Custom channels must honor the cancellation contract for shutdown to complete correctly. An operation deadline covers all of its GET blocks; the release deadline includes waiting for in-flight operations.
+Release stops accepting new operations and drains existing ones. Dispose cancels operations, waits for reads/writes, and disposes the channel according to LeaveOpen. Custom channels must honor the cancellation contract for shutdown to complete correctly. An operation deadline covers all of its GET or SET blocks; the release deadline includes waiting for in-flight operations.
 
 ## Verification
 
@@ -85,7 +87,7 @@ These checks cover the implemented feature set described here; DLMS UA certifica
 
 For classes 4/5/6, tests cover exact-version import and definition replacement, timestamp types, status preservation, reset/next_period, sliding windows and sample expiration, numerical stability of the mean, custom calculators, limits, cancellation, time moving backward, atomic validation failures, mask references/indices, binary GET/ACTION, and capture into Profile Generic.
 
-Client tests exercise the full association, GET/SET/ACTION, catalog loading, and release lifecycle through a direct APDU channel and Wrapper with fragmented bytes. They check reversed concurrent responses, independent GET blocks and reference GET-next messages, rejected AARE and invalid parameters, separate PDU limits and zero-as-unlimited, LLS, notifications and overflow, meter errors and ACTION return-data, controlled timeouts, cancellation during queue waiting/after sending/during association, Dispose with pending requests, and LeaveOpen. A separate test project injects a custom codec and ACSE strategy.
+Client tests exercise the full association, GET/SET/ACTION, catalog loading, and release lifecycle through a direct APDU channel and Wrapper with fragmented bytes. They check reversed concurrent responses, independent GET blocks and reference GET-next messages, rejected AARE and invalid parameters, separate PDU limits and zero-as-unlimited, LLS, notifications and overflow, meter errors and ACTION return-data, SET PDU boundaries and length determinants, negotiated SET blocks, early/final SET errors, corrupt acknowledgements, lost final SET confirmation, transfer resource bounds, controlled timeouts, cancellation during queue waiting/after sending/during association, Dispose with pending requests, and LeaveOpen. A separate test project injects a custom codec and ACSE strategy.
 
 ## Sources
 
@@ -93,7 +95,7 @@ The implementation was checked against the supplied local documents:
 
 - Blue Book Edition 16 Part 2, Version 1.0, October 30, 2023: 4.1 (model and types), 4.3.1–4.3.5 (Data and registers), 4.3.6 (Profile Generic), 4.4.4 (Association LN), and 4.5.1 (Clock).
 - STO 34.01-5.1-006-2023, version 4 (SPODES): 6.4 (addressing), 7.2 (data), 7.3.1–7.3.7, and the Association LN description.
-- Green Book Edition 11, Version 1.0, December 21, 2021: sections 7–8 (Wrapper, HDLC/LLC), section 9 and ACSE/xDLMS ASN.1 definitions; 9.1.4.7–9.1.4.8 (conformance and PDU), 9.3.2–9.3.3 (association and release), the GET block transfer description, and Figure 121.
+- Green Book Edition 11, Version 1.0, December 21, 2021: sections 7–8 (Wrapper, HDLC/LLC), section 9 and ACSE/xDLMS ASN.1 definitions; 9.1.4.7–9.1.4.8 (conformance and PDU), 9.3.2–9.3.3 (association and release), the GET and SET block transfer descriptions (including 9.4.6.4 and Figure 124), and the SET ASN.1/XSD definitions.
 
 The PDFs themselves are not copied into the repository.
 

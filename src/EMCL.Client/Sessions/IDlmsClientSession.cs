@@ -31,7 +31,8 @@ public interface IDlmsClientSession : IAsyncDisposable
     /// <summary>Executes one confirmed operation and preserves remote error codes and ACTION return-data errors.</summary>
     /// <param name="operation">The LN attribute or method operation.</param>
     /// <param name="cancellationToken">Cancellation of queue waiting and execution.</param>
-    /// <returns>The response, with GET blocks automatically assembled.</returns>
+    /// <returns>The response, with GET blocks automatically assembled and oversized SET values transferred in negotiated blocks.</returns>
+    /// <exception cref="EMCL.Client.Exceptions.DlmsWriteUnconfirmedException">A SET was attempted without a validated final result; no retry is performed.</exception>
     ValueTask<LnResponse> ExecuteAsync(CosemOperation operation, CancellationToken cancellationToken = default);
     /// <summary>Reads an attribute and throws a DlmsOperationException on a remote access error.</summary>
     /// <param name="classId">The remote interface-class identifier.</param>
@@ -43,6 +44,7 @@ public interface IDlmsClientSession : IAsyncDisposable
     ValueTask<DlmsValue> GetAsync(ushort classId, LogicalName logicalName, sbyte attribute,
         SelectiveAccess? selection = null, CancellationToken cancellationToken = default);
     /// <summary>Writes an attribute and throws a DlmsOperationException on a remote access error.</summary>
+    /// <remarks>Uses one normal SET when it fits, otherwise negotiated service-specific SET blocks. No automatic retry is performed. A deadline covers the whole transfer.</remarks>
     /// <param name="classId">The remote interface-class identifier.</param>
     /// <param name="logicalName">The remote object identity.</param>
     /// <param name="attribute">The signed attribute index.</param>
@@ -50,6 +52,8 @@ public interface IDlmsClientSession : IAsyncDisposable
     /// <param name="selection">Optional negotiated selective access.</param>
     /// <param name="cancellationToken">Cancellation of queue waiting and execution.</param>
     /// <returns>Completion of the remote write.</returns>
+    /// <exception cref="NotSupportedException">SET or required SET block transfer was not negotiated.</exception>
+    /// <exception cref="EMCL.Client.Exceptions.DlmsWriteUnconfirmedException">A send was attempted but no valid final result arrived, including timeout, disconnect, cancellation, or an invalid acknowledgement. Inspect InnerException for the cause; reconcile the value before retrying.</exception>
     ValueTask SetAsync(ushort classId, LogicalName logicalName, sbyte attribute, DlmsValue value,
         SelectiveAccess? selection = null, CancellationToken cancellationToken = default);
     /// <summary>Invokes a method and throws a DlmsOperationException on an action or return-data error.</summary>

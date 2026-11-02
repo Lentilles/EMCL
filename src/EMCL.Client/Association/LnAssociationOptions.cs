@@ -13,16 +13,26 @@ public sealed record LnAssociationOptions
     /// <summary>The conformance subset implemented by the built-in client.</summary>
     public const DlmsConformance SupportedConformance = DlmsConformance.Get | DlmsConformance.Set
         | DlmsConformance.Action | DlmsConformance.SelectiveAccess | DlmsConformance.BlockTransferWithGet
+        | DlmsConformance.BlockTransferWithSet
         | DlmsConformance.DataNotification | DlmsConformance.PriorityManagement;
 
     /// <summary>Gets the requested services; the default includes all implemented services except priority management.</summary>
     public DlmsConformance Conformance { get; init; } = SupportedConformance & ~DlmsConformance.PriorityManagement;
     /// <summary>Optional wire-level conformance proposal. Extra service bits are advertised but are not exposed as implemented operations.</summary>
-    public DlmsConformance? AdvertisedConformance { get; init; }
+    public DlmsConformance? AdvertisedConformance
+    {
+        get; init;
+    }
     /// <summary>Gets the optional response-allowed flag; null omits it and uses the protocol default (true).</summary>
-    public bool? ResponseAllowed { get; init; }
+    public bool? ResponseAllowed
+    {
+        get; init;
+    }
     /// <summary>Allows a peer's unrequested SET block-transfer bit in AARE while excluding it from usable negotiated services.</summary>
-    public bool AcceptUnexpectedBlockTransferWithSet { get; init; }
+    public bool AcceptUnexpectedBlockTransferWithSet
+    {
+        get; init;
+    }
     /// <summary>Gets the advertised client receive limit; zero means unlimited by the protocol, while local resource limits still apply.</summary>
     public ushort MaxReceivePduSize { get; init; } = DefaultMaxReceivePduSize;
     /// <summary>Gets the authentication mechanism; no authentication is the default.</summary>

@@ -9,6 +9,10 @@ internal static class ApduEncoding
     internal const byte GetNextChoice = 2;
     /// <summary>The GET response-with-data-block choice.</summary>
     internal const byte GetBlockChoice = 2;
+    internal const byte SetFirstBlockChoice = 2;
+    internal const byte SetBlockChoice = 3;
+    internal const byte SetBlockResponseChoice = 2;
+    internal const byte SetLastBlockResponseChoice = 3;
     /// <summary>The data alternative of get-data-result.</summary>
     internal const byte DataResult = 0;
     /// <summary>The error alternative of get-data-result.</summary>
