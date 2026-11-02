@@ -1,96 +1,96 @@
-# Матрица возможностей
+# Capability matrix
 
-| Возможность | Реализация |
+| Feature | Implementation |
 | --- | --- |
-| Logical Name | Да; индексы атрибутов и методов знаковые, включая пользовательские отрицательные |
-| Short Name | Следующий этап |
-| Data 1/v0, Register 3/v0 | Стандартные определения |
-| Extended Register 4/v0 | capture значения/status, reset и capture_time через TimeProvider |
-| Demand Register 5/v0 | reset/next_period, выборки и окно period × number_of_periods, заменяемый расчёт |
-| Register Activation 6/v0 | add_register/add_mask/delete_mask, выбор маски и проверка активности регистра |
-| Clock 8/v0 | Настраиваемый тип времени и границы часового пояса; локальный источник времени |
-| Profile Generic 7/v1 | Дескриптор, capture/reset, сортировки 1–6, ёмкость, selective access 1/2 |
-| Association LN 15/v3 | Поддерживается |
-| Association LN 15/v1 | Поддерживается |
-| Другие классы и версии | Универсальные объекты из ассоциации; определения и поведение добавляются пользователем |
-| A-XDR Data | Null, array, structure, boolean, bit-string, все целые/float-типы, enum, BCD, строки, даты/время, delta-типы |
-| Compact-array | Описание типа, вложенные структуры и массивы, чтение/запись строк без повторения тегов |
-| GET/SET/ACTION | Normal request/response; GET и SET с selective access |
-| GET block transfer | GET-next, response-with-datablock, отдельная сборка с явным жизненным циклом |
-| DataNotification | Кодек long invoke ID, необязательного времени и Data |
-| ACSE | AARQ/AARE/RLRQ/RLRE, definite-length BER, сохранение полей, включая authentication fields |
-| xDLMS negotiation | InitiateRequest/InitiateResponse и conformance bit-string |
-| BER indefinite length / high-tag-number fields | Не поддерживаются; возвращается ошибка или Unsupported |
-| HDLC | Type 3, адреса 1/2/4 октета, control byte, HCS/FCS, общие флаги, сегментация I-frames |
-| LLC | Command/response header и broadcast destination |
-| Wrapper | Версия 1, wPorts, 16-битная длина |
-| Stream | Адаптер и фрагментированный ввод/вывод, leaveOpen, cancellation |
-| TCP lifecycle | `TcpByteTransport` и фабрика: открытие с таймаутом, cancellation, владение соединением |
-| Serial lifecycle | `SerialByteTransport` и фабрика: настройки линии, открытие с таймаутом, двоичный I/O, закрытие при отмене, владение портом |
-| UDP lifecycle | Реализует приложение или пользовательский транспорт |
-| IEC 62056-21 sign-on | Не поддерживается; Serial начинает обмен сразу на заданной скорости |
-| Клиентская LN-сессия | AARQ/AARE, conformance и независимые PDU-лимиты, RLRQ/RLRE, состояния и владение каналом |
-| Операции клиента | GET/SET/ACTION normal, selective access, до 16 invoke ID, один reader и сериализованный writer |
-| GET block transfer клиента | Автоматический GET-next с подтверждением принятого номера; ограниченная сборка и проверка одного A-XDR-значения |
-| Консольный экспорт | Wrapper/TCP и HDLC/TCP-шлюз (SNRM/UA, I/RR без повторов), отдельный JSON-конфиг, None/LLS/HLS High, OBIS/классы/члены/права v1/v3 в JSON; атомарное сохранение |
-| Загрузка каталога клиента | Чтение object_list, включая GET-блоки, атомарный импорт с явной версией Association LN |
-| Уведомления клиента | Отдельный ограниченный поток согласованных DataNotification; переполнение завершает сессию |
-| Сроки выполнения и отмена | На весь обмен; отмена после попытки отправки завершает ассоциацию с ошибкой, ожидание очереди отменяется отдельно |
-| Готовая серверная сессия, полный HDLC link management/ARQ, retry | Следующий этап; пример выполняет только SNRM/UA и RR |
-| SET/ACTION block transfer, GBT, списочные варианты APDU | Следующий этап; Unsupported при декодировании |
-| Аутентификация клиентской сессии | None, LLS и HLS High через AES-128 challenge-response и Association LN ACTION; ответ AARE и diagnostic проверяются |
-| Защищённые APDU, HLS SHA-256/GMAC и прочие механизмы | Требуют внешней реализации; успешная аутентификация не имитируется |
+| Logical Name | Supported; signed attribute and method indices, including custom negative indices |
+| Short Name | Future work |
+| Data 1/v0, Register 3/v0 | Standard definitions |
+| Extended Register 4/v0 | Value/status capture, reset, and capture_time through TimeProvider |
+| Demand Register 5/v0 | reset/next_period, samples and a period × number_of_periods window, replaceable calculation |
+| Register Activation 6/v0 | add_register/add_mask/delete_mask, mask selection, and register enablement checks |
+| Clock 8/v0 | Configurable time type and time-zone bounds; local clock source |
+| Profile Generic 7/v1 | Descriptor, capture/reset, sort methods 1–6, capacity, selective access 1/2 |
+| Association LN 15/v3 | Supported |
+| Association LN 15/v1 | Supported |
+| Other classes and versions | Generic objects from the association; users provide definitions and behavior |
+| A-XDR Data | Null, array, structure, boolean, bit-string, all integer/float types, enum, BCD, strings, date/time, and delta types |
+| Compact-array | Type description, nested structures and arrays, row reading/writing without repeated tags |
+| GET/SET/ACTION | Normal request/response; GET and SET with selective access |
+| GET block transfer | GET-next, response-with-datablock, separate assembly with an explicit lifecycle |
+| DataNotification | Codec for long invoke ID, optional time, and Data |
+| ACSE | AARQ/AARE/RLRQ/RLRE, definite-length BER, preservation of fields including authentication fields |
+| xDLMS negotiation | InitiateRequest/InitiateResponse and conformance bit-string |
+| BER indefinite length / high-tag-number fields | Not supported; returns an error or Unsupported |
+| HDLC | Type 3, 1/2/4-octet addresses, control byte, HCS/FCS, shared flags, and I-frame segmentation |
+| LLC | Command/response header and broadcast destination |
+| Wrapper | Version 1, wPorts, 16-bit length |
+| Stream | Adapter and fragmented I/O, leaveOpen, cancellation |
+| TCP lifecycle | `TcpByteTransport` and factory: opening with a timeout, cancellation, and connection ownership |
+| Serial lifecycle | `SerialByteTransport` and factory: line settings, opening with a timeout, binary I/O, closing on cancellation, and port ownership |
+| UDP lifecycle | Provided by the application or a custom transport |
+| IEC 62056-21 sign-on | Not supported; Serial starts exchanging data immediately at the configured baud rate |
+| Logical Name client session | AARQ/AARE, conformance and independent PDU limits, RLRQ/RLRE, states, and channel ownership |
+| Client operations | GET/SET/ACTION normal, selective access, up to 16 invoke IDs, one reader and a serialized writer |
+| Client GET block transfer | Automatic GET-next acknowledging the received block number; bounded assembly and validation of one A-XDR value |
+| Console export | Wrapper/TCP and HDLC/TCP gateway (SNRM/UA, I/RR without retries), separate JSON configuration, None/LLS/HLS High, OBIS/classes/members/v1/v3 rights in JSON; atomic saving |
+| Client catalog loading | Reading object_list, including GET blocks, and atomic import with an explicit Association LN version |
+| Client notifications | Separate bounded stream of negotiated DataNotification messages; overflow terminates the session |
+| Deadlines and cancellation | Cover the entire exchange; cancellation after a send attempt faults the association, while queue waiting is canceled separately |
+| Ready-to-use server session, full HDLC link management/ARQ, retry | Future work; the example performs only SNRM/UA and RR |
+| SET/ACTION block transfer, GBT, APDU list variants | Future work; Unsupported during decoding |
+| Client session authentication | None, LLS, and HLS High through AES-128 challenge-response and Association LN ACTION; AARE response and diagnostic are validated |
+| Protected APDUs, HLS SHA-256/GMAC, and other mechanisms | Require an external implementation; successful authentication is not simulated |
 
-## Границы модели
+## Model boundaries
 
-Права доступа — снимки конкретной ассоциации, а не свойства класса. Association remove_object меняет видимость в одной ассоциации. Конвертеры и обработчики не должны самостоятельно трактовать v1 enum как v3 bitmask.
+Access rights are snapshots of a particular association, not class properties. Association remove_object changes visibility within one association. Converters and handlers must not independently interpret a v1 enum as a v3 bitmask.
 
-`object_list` не содержит значения или полные схемы неизвестных классов. Для неизвестной версии не применяется дескриптор другой версии. После регистрации определения можно явно вызвать `ObjectCatalog.Rebind`.
+`object_list` contains neither values nor complete schemas for unknown classes. A descriptor from another version is not substituted for an unknown version. After registering a definition, you can explicitly call `ObjectCatalog.Rebind`.
 
-Формат даты и времени сохраняется без изменения тегов. В частности, Clock.time в Blue Book представлен octet-string, а в предоставленном СПОДЭС 4 — date-time. Исходные специальные поля доступны через байты; приведение к DateTimeOffset требует определённой даты и deviation.
+Date and time formats are preserved without changing tags. In particular, Clock.time is an octet-string in the Blue Book and date-time in the supplied SPODES 4 document. Original special fields remain available as bytes; conversion to DateTimeOffset requires a concrete date and deviation.
 
-Extended/Demand Register используют octet-string из 12 октетов в Blue Book и date-time (тег 25) в СПОДЭС. В таблицах 7.3.3–7.3.4 предоставленного СПОДЭС 4 рядом с названием «date-time» указан номер 27. Раздел типов и Clock задают date-time тегом 25, а тег 27 обозначает четырёхоктетный time. По умолчанию библиотека использует octet-string; для тега 25 зарегистрируйте определение класса с `DlmsType.DateTime`.
+Extended/Demand Register uses a 12-octet octet-string in the Blue Book and date-time (tag 25) in SPODES. Tables 7.3.3–7.3.4 in the supplied SPODES 4 document list the number 27 next to the name 'date-time'. The data types section and Clock specify tag 25 for date-time, while tag 27 denotes a four-octet time. The library defaults to octet-string; for tag 25, register a class definition with `DlmsType.DateTime`.
 
-Локальный Extended Register фиксирует значение и время через `CaptureAsync`; reset обновляет время, сохраняя status. Demand Register принимает выборки через `RecordSampleAsync`. Стандартный калькулятор возвращает Float64 — среднее с одинаковым весом каждой выборки, независимо от интервала между ними. Он не интегрирует энергию и не восстанавливает значения из delta-тегов: такие расчёты, вес по времени и округление задаются через `IDemandValueCalculator`. Приложение передаёт значения в согласованных единицах scaler/unit. Окно хранения равно `period × number_of_periods`; выборки на нижней границе окна истекают. При `next_period` текущий результат становится последним; для одного периода выборки очищаются, для скользящего окна сохраняются. Изменение period/number_of_periods или запись среднего очищает выборки, сохраняя остальные атрибуты. История выборок живёт в обработчике и не восстанавливается из хранилища после перезапуска. Периодический сбор и вызов next_period планирует приложение.
+The local Extended Register captures value and time through `CaptureAsync`; reset updates the time while preserving status. Demand Register accepts samples through `RecordSampleAsync`. The default calculator returns a Float64 mean with equal weight for each sample, regardless of the interval between samples. It does not integrate energy or reconstruct values from delta tags: use `IDemandValueCalculator` for those calculations, time weighting, and rounding. The application supplies values in consistent scaler/unit units. The retention window is `period × number_of_periods`; samples at the lower boundary expire. On `next_period`, the current result becomes the last result; samples are cleared for a single period and retained for a sliding window. Changing period/number_of_periods or writing an average clears samples while preserving other attributes. Sample history lives in the handler and is not restored from storage after a restart. The application schedules periodic collection and next_period calls.
 
-Reset регистров требует исходного числового значения для определения типа нуля либо внедрённой функции значения по умолчанию. Незаполненные атрибуты остаются отсутствующими; известные стандартные значения по умолчанию — `Demand Register.number_of_periods = 1` и пустые списки Register Activation. Обработчики сериализуют локальную подачу измерений с операциями диспетчера. Пакет записей предполагает безошибочный `IObjectStateStore.Set`; транзакции произвольного внешнего хранилища предоставляет само хранилище.
+Register reset requires an initial numeric value to determine the zero type, or an injected default-value function. Unpopulated attributes remain absent; known standard defaults are `Demand Register.number_of_periods = 1` and empty Register Activation lists. Handlers serialize local measurement input with dispatcher operations. A batch of writes assumes that `IObjectStateStore.Set` succeeds; an arbitrary external store must provide its own transactions.
 
-Register Activation проверяет наличие назначенных объектов классов 3/4/5, уникальность имён масок и индексы от 1 до длины register_assignment. В этой реализации максимум 255 назначений. Повторное add_mask с тем же байтовым именем заменяет маску; add_register дописывает назначение, сохраняя позиции. Удаление выбранной маски возвращает TemporaryFailure: сначала нужно выбрать другую. Пустое байтовое имя маски допустимо. Неназначенные регистры активны; назначенные без выбранной маски неактивны. Приложение использует `IsEnabledAsync` при получении измерений; обработчик не блокирует произвольные записи состояния регистров. Удаление назначенного объекта напрямую из каталога требует последующего согласования конфигурации приложением.
+Register Activation checks that assigned objects of classes 3/4/5 exist, mask names are unique, and indices fall between 1 and the length of register_assignment. This implementation supports up to 255 assignments. Repeating add_mask with the same byte name replaces the mask; add_register appends an assignment while preserving positions. Deleting the selected mask returns TemporaryFailure: select another mask first. An empty byte name is valid. Unassigned registers are enabled; assigned registers without a selected mask are disabled. The application uses `IsEnabledAsync` when collecting measurements; the handler does not block arbitrary register state writes. If an assigned object is removed directly from the catalog, the application must reconcile the configuration afterward.
 
-Входной буфер кодека может содержать несколько сообщений; `Consumed` указывает границу первого. Ошибки и NeedMoreData возвращают нулевое потребление. HDLC удерживает последний flag, поскольку он может открывать следующий кадр. LLC получает уже завершённое информационное сообщение.
+A codec input buffer may contain multiple messages; `Consumed` indicates the end of the first message. Errors and NeedMoreData return zero consumption. HDLC retains the final flag because it may open the next frame. LLC receives an already complete information message.
 
-Profile Generic хранит значения строк явно. Компактное представление сохраняется при загрузке без перестановки/усечения; capture или изменение порядка может перевести буфер в обычный array. Индексы записей/столбцов селектора 2 начинаются с 1; конечный индекс 0 означает до конца. Ошибочные операции не должны добавлять частичную capture-строку.
+Profile Generic stores row values explicitly. Compact representation is preserved during loading without reordering or truncation; capture or changing the order may convert the buffer to a regular array. Selector 2 entry/column indices start at 1; an end index of 0 means through the end. Failed operations must not append a partial capture row.
 
-## Клиентская сессия
+## Client session
 
-`EMCL.Client` зависит от Core, Protocol, Objects и Transport. Она не зависит от HDLC и Wrapper. Политики конструирования/проверки ACSE и кодек APDU заменяются явно; `IDlmsClientSession` позволяет заменить весь клиент.
+`EMCL.Client` depends on Core, Protocol, Objects, and Transport. It does not depend on HDLC or Wrapper. ACSE construction/validation policies and the APDU codec can be replaced explicitly; `IDlmsClientSession` allows replacing the entire client.
 
-Сессия одноразовая и не устанавливает транспортное соединение. Некорректная корреляция, дубликат ответа, обрыв, неподдерживаемое сообщение, превышение PDU/GET-лимита и отмена после попытки отправки завершают ассоциацию. Ошибки прибора сохраняются как remote operation errors и позволяют продолжать обмен. GET-блоки начинаются с 1; порядок и invoke ID проверяются отдельно для каждого запроса. SET/ACTION block transfer и GBT не предлагаются при согласовании.
+The session is single-use and does not establish a transport connection. Invalid correlation, a duplicate response, a disconnect, an unsupported message, exceeded PDU/GET limits, or cancellation after a send attempt terminates the association. Meter errors are preserved as remote operation errors and allow further exchanges. GET blocks start at 1; order and invoke ID are checked separately for each request. SET/ACTION block transfer and GBT are not proposed during negotiation.
 
-Release прекращает приём новых операций и дожидается начатых. Dispose отменяет операции, ожидает чтение/запись и освобождает канал согласно LeaveOpen. Для корректного завершения пользовательские каналы должны выполнять контракт отмены. Срок операции охватывает все её GET-блоки; срок release включает ожидание выполняющихся операций.
+Release stops accepting new operations and drains existing ones. Dispose cancels operations, waits for reads/writes, and disposes the channel according to LeaveOpen. Custom channels must honor the cancellation contract for shutdown to complete correctly. An operation deadline covers all of its GET blocks; the release deadline includes waiting for in-flight operations.
 
-## Проверки
+## Verification
 
-Команда после Release-сборки: `dotnet test --project tests/EMCL.Tests/EMCL.Tests.csproj -c Release --no-build --no-restore`.
+After a Release build, run: `dotnet test --project tests/EMCL.Tests/EMCL.Tests.csproj -c Release --no-build --no-restore`.
 
-Тесты xUnit v3 проверяют эталонные байты A-XDR, BER/ACSE, LN APDU и Wrapper, независимый CRC-16/X-25 check value `123456789 → 0x906E`, SNRM `7E A0 07 03 21 93 0F 01 7E`, каждый неполный префикс сообщений, ограниченные буферы, malformed input, точные версии классов, права v1/v3, импорт, локальную логику, сортировки, расширения из другой сборки и эквивалентность трёх путей передачи APDU. Эталонные векторы и сортировки оформлены параметризованными тестами; дополнительно проверяется владение ресурсами транспорта при повторном освобождении.
+xUnit v3 tests verify reference bytes for A-XDR, BER/ACSE, LN APDUs, and Wrapper; the independent CRC-16/X-25 check value `123456789 → 0x906E`; SNRM `7E A0 07 03 21 93 0F 01 7E`; every incomplete message prefix; bounded buffers; malformed input; exact class versions; v1/v3 rights; import; local behavior; sorting; extensions from another assembly; and equivalence of three APDU transmission paths. Reference vectors and sort orders use parameterized tests; transport resource ownership under repeated disposal is also checked.
 
-Эти проверки подтверждают указанный срез реализации; сертификационные испытания DLMS UA и проверка на физических приборах в проект не входят.
+These checks cover the implemented feature set described here; DLMS UA certification testing and validation against physical meters are outside the project scope.
 
-Для классов 4/5/6 проверяются импорт точных версий и замену определений, типы временных меток, сохранение status, reset/next_period, скользящее окно и истечение выборок, численная устойчивость среднего, пользовательский калькулятор, лимиты, отмена, неверное направление времени, атомарность отказов валидации, ссылки/индексы масок, бинарные GET/ACTION и захват в Profile Generic.
+For classes 4/5/6, tests cover exact-version import and definition replacement, timestamp types, status preservation, reset/next_period, sliding windows and sample expiration, numerical stability of the mean, custom calculators, limits, cancellation, time moving backward, atomic validation failures, mask references/indices, binary GET/ACTION, and capture into Profile Generic.
 
-Клиентские тесты выполняют полный цикл ассоциации, GET/SET/ACTION, загрузку каталога и release через прямой APDU-канал и Wrapper с дроблением байтов. Проверяются обратный порядок параллельных ответов, независимые GET-блоки и эталонные GET-next, отказ AARE и неверные параметры, отдельные PDU-лимиты и нулевой unlimited, LLS, уведомления и переполнение, ошибки прибора и ACTION return-data, управляемые таймауты, отмена очереди/отправленного запроса/ассоциации, Dispose с ожидающими запросами и LeaveOpen. Отдельный тестовый проект внедряет свой кодек и ACSE-стратегию.
+Client tests exercise the full association, GET/SET/ACTION, catalog loading, and release lifecycle through a direct APDU channel and Wrapper with fragmented bytes. They check reversed concurrent responses, independent GET blocks and reference GET-next messages, rejected AARE and invalid parameters, separate PDU limits and zero-as-unlimited, LLS, notifications and overflow, meter errors and ACTION return-data, controlled timeouts, cancellation during queue waiting/after sending/during association, Dispose with pending requests, and LeaveOpen. A separate test project injects a custom codec and ACSE strategy.
 
-## Источники
+## Sources
 
-Реализация сверялась с предоставленными локальными документами:
+The implementation was checked against the supplied local documents:
 
-- Blue Book Edition 16 Part 2, Version 1.0, 30.10.2023: 4.1 (модель, типы), 4.3.1–4.3.5 (Data и регистры), 4.3.6 (Profile Generic), 4.4.4 (Association LN), 4.5.1 (Clock).
-- СТО 34.01-5.1-006-2023, версия 4: 6.4 (адресация), 7.2 (данные), 7.3.1–7.3.7 и описание Association LN.
-- Green Book Edition 11, Version 1.0, 21.12.2021: разделы 7–8 (Wrapper, HDLC/LLC), раздел 9 и ASN.1 определения ACSE/xDLMS; 9.1.4.7–9.1.4.8 (conformance и PDU), 9.3.2–9.3.3 (ассоциация и release), описание GET block transfer и Figure 121.
+- Blue Book Edition 16 Part 2, Version 1.0, October 30, 2023: 4.1 (model and types), 4.3.1–4.3.5 (Data and registers), 4.3.6 (Profile Generic), 4.4.4 (Association LN), and 4.5.1 (Clock).
+- STO 34.01-5.1-006-2023, version 4 (SPODES): 6.4 (addressing), 7.2 (data), 7.3.1–7.3.7, and the Association LN description.
+- Green Book Edition 11, Version 1.0, December 21, 2021: sections 7–8 (Wrapper, HDLC/LLC), section 9 and ACSE/xDLMS ASN.1 definitions; 9.1.4.7–9.1.4.8 (conformance and PDU), 9.3.2–9.3.3 (association and release), the GET block transfer description, and Figure 121.
 
-Сами PDF в репозиторий не копируются.
+The PDFs themselves are not copied into the repository.
 
-Консольный пример проверяется через настоящий TCP loopback и Wrapper: чтение object_list несколькими GET-блоками, права v1/v3, сохранение JSON и разрыв после последнего блока. Отдельный HDLC/TCP-тест проверяет SNRM/UA, обмен I-кадрами, сборку сегментов и RR. Другие xUnit-тесты проверяют конфиг, источники пароля, отсутствие паролей в экспорте, неизвестные классы/члены и null для необъявленных прав, флаги защиты/селекторы, отмену и сохранность существующего файла.
+The console example is tested through a real TCP loopback connection and Wrapper: reading object_list across multiple GET blocks, v1/v3 rights, saving JSON, and disconnecting after the final block. A separate HDLC/TCP test checks SNRM/UA, I-frame exchange, segment assembly, and RR. Other xUnit tests cover configuration, password sources, absence of passwords in exports, unknown classes/members and null for unreported rights, protection flags/selectors, cancellation, and preservation of existing files.
 
-Serial-тесты проверяют настройки линии, конфигурацию и экспорт, передачу двоичных байтов, идемпотентное освобождение, отмену I/O с потоком, игнорирующим CancellationToken, ошибки при очистке отключённого устройства, таймаут открытия и освобождение порта после позднего завершения открытия. Физическое устройство для этих тестов не требуется.
+Serial tests cover line settings, configuration and export, binary byte transfer, idempotent disposal, I/O cancellation with a stream that ignores CancellationToken, cleanup errors for a disconnected device, open timeouts, and port disposal after a late open completion. These tests require no physical device.

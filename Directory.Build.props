@@ -8,6 +8,7 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Deterministic>true</Deterministic>
+    <Version Condition="'$(Version)' == ''">0.1.0-preview.1</Version>
   </PropertyGroup>
   <ItemGroup>
     <CompilerVisibleProperty Include="RootNamespace" />
@@ -17,9 +18,18 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Authors>Alexey Tyapkin</Authors>
+    <Copyright>Copyright (c) 2026 Alexey Tyapkin</Copyright>
+    <PackageTags>DLMS;COSEM;IEC62056;OBIS;metering;HDLC</PackageTags>
+    <RepositoryType Condition="'$(RepositoryUrl)' != ''">git</RepositoryType>
+    <PackageProjectUrl Condition="'$(PackageProjectUrl)' == '' and '$(RepositoryUrl)' != ''">$(RepositoryUrl)</PackageProjectUrl>
+    <PublishRepositoryUrl Condition="'$(RepositoryUrl)' != ''">true</PublishRepositoryUrl>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <DebugType>portable</DebugType>
   </PropertyGroup>
   <ItemGroup Condition="'$(MSBuildProjectName)' != 'EMCL.Tests' and '$(MSBuildProjectName)' != 'EMCL.Examples'">
-    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
+    <None Include="$(MSBuildThisFileDirectory)nuget/README.md" Pack="true" PackagePath="/" />
     <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="/" />
   </ItemGroup>
 </Project>

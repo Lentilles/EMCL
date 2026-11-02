@@ -1,34 +1,35 @@
 # EMCL
 
-Расширяемая библиотека DLMS/COSEM для .NET 10. Универсальная модель объектов, бинарные кодеки, локальное выполнение операций, клиентская LN-сессия и независимые адаптеры кадров и транспорта.
+An extensible DLMS/COSEM library for .NET 10. A universal object model, binary codecs, local operation execution, a Logical Name client session, and independent framing and transport adapters.
 
-Библиотека распространяется по [лицензии MIT](LICENSE).
+The library is distributed under the [MIT license](LICENSE).
 
-## Возможности
+## Features
 
-- Клиентская Logical Name-ассоциация: GET/SET/ACTION, selective access, GET block transfer, уведомления и аутентификация None, LLS, HLS High (AES-128).
-- Чтение Association LN v1/v3: полный импорт каталога или потоковая выдача записей `object_list` с прогрессом.
-- Wrapper и HDLC поверх TCP, Serial или пользовательского транспорта; консольный экспорт каталога и прав доступа в JSON.
-- Локальная модель Data, Register, Extended Register, Demand Register, Register Activation, Clock, Profile Generic и Association LN; пользовательские классы и обработчики.
-- Независимые кодеки A-XDR, ACSE и LN APDU с ограничениями размера и глубины данных.
+- Logical Name client associations: GET/SET/ACTION, selective access, GET block transfer, notifications, and None, LLS, and HLS High (AES-128) authentication.
+- Association LN v1/v3 reading: full catalog import or streaming `object_list` entries with progress reporting.
+- Wrapper and HDLC over TCP, Serial, or a custom transport; console export of the catalog and access rights to JSON.
+- Local models for Data, Register, Extended Register, Demand Register, Register Activation, Clock, Profile Generic, and Association LN; custom classes and handlers.
+- Independent A-XDR, ACSE, and LN APDU codecs with data size and nesting limits.
 
-Short Name, защищённые APDU, HLS SHA-256/GMAC, SET/ACTION block transfer, GBT и готовая серверная сессия пока не реализованы. HDLC-канал выполняет SNRM/UA и обмен I/RR; исходящий APDU должен помещаться в один согласованный information frame. Подробности — в [матрице возможностей](docs/COVERAGE.md).
+Short Name, protected APDUs, HLS SHA-256/GMAC, SET/ACTION block transfer, GBT, and a ready-to-use server session are not implemented yet. The HDLC channel performs SNRM/UA setup and I/RR exchange; each outgoing APDU must fit a single negotiated information frame. See the [capability matrix](docs/COVERAGE.md) for details.
 
-## Навигация
+## Contents
 
-- [Сборка и проверка](#сборка-и-проверка) · [Локальные NuGet-пакеты](#локальные-nuget-пакеты)
-- [Экспорт ассоциации реального прибора](#экспорт-ассоциации-реального-прибора)
-- [Структура репозитория](#структура-репозитория) · [Сборки](#сборки)
-- [Быстрый пример](#быстрый-пример) · [Импорт ассоциации](#импорт-ассоциации)
-- [Свои объекты и обработчики](#свои-объекты-и-обработчики)
-- [Транспорт и кадры](#транспорт-и-кадры) · [Клиентская LN-сессия](#клиентская-ln-сессия)
-- [Блоки, ограничения и локальное выполнение](#блоки-ограничения-и-локальное-выполнение) · [Лицензия](#лицензия)
+- [Build and verification](#build-and-verification) · [Local NuGet packages](#local-nuget-packages)
+- [Publishing to NuGet](docs/PUBLISHING.md)
+- [Exporting a real meter association](#exporting-a-real-meter-association)
+- [Repository structure](#repository-structure) · [Assemblies](#assemblies)
+- [Quick example](#quick-example) · [Association import](#association-import)
+- [Custom objects and handlers](#custom-objects-and-handlers)
+- [Transport and framing](#transport-and-framing) · [Logical Name client session](#logical-name-client-session)
+- [Blocks, limits, and local execution](#blocks-limits-and-local-execution) · [License](#license)
 
-## Сборка и проверка
+## Build and verification
 
-Для сборки нужен стабильный .NET SDK 10.0.100 или более новый SDK ветки 10.0; политика выбора SDK и тестового движка задана в [global.json](global.json). `EMCL.Transport` использует пакет Microsoft `System.IO.Ports` для Serial; остальные библиотечные проекты не имеют внешних NuGet-зависимостей. Тесты используют xUnit v3 и Microsoft Testing Platform.
+Building requires a stable .NET SDK 10.0.100 or later in the 10.0 line; SDK selection and the test runner are configured in [global.json](global.json). `EMCL.Transport` uses Microsoft's `System.IO.Ports` package for Serial; the other library projects have no external NuGet dependencies. Tests use xUnit v3 and Microsoft Testing Platform.
 
-Команды выполняются из корня репозитория. Локальная демонстрация `--demo` не требует подключения к прибору:
+Run the following commands from the repository root. The local `--demo` demonstration does not require a meter connection:
 
 ```sh
 dotnet restore EMCL.slnx --disable-parallel
@@ -37,13 +38,13 @@ dotnet test --project tests/EMCL.Tests/EMCL.Tests.csproj -c Release --no-build -
 dotnet run --project examples/EMCL.Examples -c Release --no-build -- --demo
 ```
 
-`EMCL.Tests` содержит тесты `[Fact]` и параметризованные `[Theory]`, разделённые по подсистемам. Эталонные сообщения проверяются как отдельные тестовые сценарии. Анализаторы xUnit включены; асинхронные тесты используют токен отмены тестового контекста.
+`EMCL.Tests` contains `[Fact]` tests and parameterized `[Theory]` tests organized by subsystem. Reference messages are checked as individual test cases. xUnit analyzers are enabled; asynchronous tests use the test context's cancellation token.
 
-Публичный API документирован XML-комментариями на английском. XML-файлы генерируются рядом с DLL и включаются в NuGet-пакеты. Отсутствие документации (`CS1591`), предупреждения компилятора и включённых анализаторов блокируют сборку. Правила разработки и команды проверки описаны в [CONTRIBUTING.md](CONTRIBUTING.md).
+The public API has XML documentation in English. XML files are generated alongside the DLLs and included in NuGet packages. Missing documentation (`CS1591`), compiler warnings, and warnings from enabled analyzers fail the build. Development rules and verification commands are described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Локальные NuGet-пакеты
+## Local NuGet packages
 
-После восстановления зависимостей соберите пакеты без публикации в NuGet.org:
+After restoring dependencies, build the packages without publishing them to NuGet.org:
 
 ```sh
 dotnet build EMCL.slnx -c Release --no-restore -m:1
@@ -51,36 +52,47 @@ dotnet pack EMCL.slnx -c Release --no-restore --no-build --disable-build-servers
   -p:PackageVersion=0.1.0-preview.1 -p:PackageOutputPath="$PWD/packages"
 ```
 
-В `packages/` появятся `EMCL.0.1.0-preview.1.nupkg` и пакеты семи библиотечных сборок, от которых он зависит. Каждый пакет содержит README, полный текст лицензии и метаданные лицензии `MIT`. Пример и тесты не упаковываются; папка `packages/` исключена из Git.
+The `packages/` directory will contain `EMCL.0.1.0-preview.1.nupkg` and packages for the seven library assemblies it depends on, along with matching `.snupkg` symbol packages. Each package includes the [NuGet README](nuget/README.md), the complete license text, and `MIT` license metadata. The shared version and metadata are configured in `Directory.Build.props`. Examples and tests are not packaged; `packages/` is excluded from Git.
 
-Для использования из другого проекта добавьте абсолютный путь к `packages/` как локальный источник NuGet и установите пакет `EMCL` той же версии:
+To use the packages in another project, add the absolute path to `packages/` as a local NuGet source and install the same version of `EMCL`:
 
 ```sh
 dotnet nuget add source /absolute/path/to/EMCL/packages --name emcl-local
 dotnet add package EMCL --version 0.1.0-preview.1
 ```
 
-Команду установки выполняйте в каталоге проекта-потребителя с целевой платформой `net10.0` или совместимой. Версия `0.1.0-preview.1` в этих командах — пример локальной версии. Команда `dotnet pack` только создаёт файлы; публикация выполняется отдельной командой `dotnet nuget push`.
+Run the installation command in the consuming project's directory, targeting `net10.0` or a compatible framework. The version `0.1.0-preview.1` in these commands is an example local version. `dotnet pack` only creates files; publishing is performed separately with `dotnet nuget push`.
 
-## Экспорт ассоциации реального прибора
+To prepare a release with dependency restore, build, and tests, run
+`bash scripts/pack.sh 0.1.0-preview.1`. The output is saved in the separate
+`packages/0.1.0-preview.1/` directory. Instructions for publishing all eight
+packages and their symbols are in [docs/PUBLISHING.md](docs/PUBLISHING.md).
 
-Консольный пример подключается по Wrapper/TCP, через HDLC/TCP-шлюз или напрямую по Serial, читает `object_list` (в том числе GET-блоками) и сохраняет JSON с OBIS-кодами, классами, атрибутами, методами и исходными/расшифрованными правами доступа.
+GitHub Actions builds, tests, and packages the solution on branch pushes and pull
+requests. Pushing a version tag such as `v0.1.0-preview.1` publishes all packages
+and symbols to NuGet.org through Trusted Publishing (OIDC). Configure the
+`NUGET_USER` Actions variable, the `nuget` environment, and the NuGet.org trust
+policy as described in the [setup instructions](docs/PUBLISHING.md#one-time-setup).
+
+## Exporting a real meter association
+
+The console example connects over Wrapper/TCP, an HDLC/TCP gateway, or directly over Serial, reads `object_list` (including GET block transfer), and saves JSON with OBIS codes, classes, attributes, methods, and raw and decoded access rights.
 
 ```sh
 cp examples/EMCL.Examples/meter.example.json examples/EMCL.Examples/meter.local.json
 dotnet run --project examples/EMCL.Examples -c Release
 ```
 
-Для Serial вместо TCP-шаблона скопируйте `examples/EMCL.Examples/meter.serial.example.json` в `meter.local.json` в том же каталоге и задайте имя порта и параметры линии. Serial поддерживает HDLC и Wrapper; IEC 62056-21 sign-on и автоматическое переключение скорости не выполняются.
+For Serial, copy `examples/EMCL.Examples/meter.serial.example.json` to `meter.local.json` in the same directory instead of using the TCP template, then set the port name and line parameters. Serial supports HDLC and Wrapper; IEC 62056-21 sign-on and automatic baud-rate switching are not performed.
 
-Для запуска из IDE достаточно выбрать `EMCL.Examples` как запускаемый проект и нажать **Run**. Без аргументов приложение предпочитает `meter.local.json`, затем `meter.example.json`. Перед запуском отредактируйте транспорт, адреса, TCP-порт, версию ассоциации и аутентификацию в конфиге. Полный путь результата печатается в консоли. Путь результата и разрешение перезаписи также задаются в конфиге. Относительный путь считается от каталога копии конфига рядом с приложением. Поля пароля не включаются в экспорт.
+To run from an IDE, select `EMCL.Examples` as the startup project and click **Run**. With no arguments, the application prefers `meter.local.json`, then `meter.example.json`. Before running, edit the transport, addresses, TCP port, association version, and authentication settings in the configuration. The console prints the full output path. The output path and overwrite permission are also configured in the file. Relative paths are resolved against the directory containing the configuration copy next to the application. Password fields are excluded from the export.
 
-[Параметры конфигурации и схема JSON](examples/EMCL.Examples/README.md) · [Шаблон TCP](examples/EMCL.Examples/meter.example.json) · [Шаблон Serial](examples/EMCL.Examples/meter.serial.example.json).
+[Configuration parameters and JSON schema](examples/EMCL.Examples/README.md) · [TCP template](examples/EMCL.Examples/meter.example.json) · [Serial template](examples/EMCL.Examples/meter.serial.example.json).
 
-## Структура репозитория
+## Repository structure
 
 ```text
-src/                         Библиотечные проекты
+src/                         Library projects
   EMCL.Core/                 Access, Codecs, Descriptors, Objects, Operations,
                              Pipeline, State, Validation, Values
   EMCL.Protocol/             Acse, Apdu, Axdr, BlockTransfer, Internal
@@ -91,40 +103,40 @@ src/                         Библиотечные проекты
   EMCL.Framing.Wrapper/
   EMCL.Transport/            Channels, Streams
   EMCL/                      Composition, Framing, Messaging
-tests/EMCL.Tests/            Проверки по подсистемам; общие данные и doubles в Support
-examples/EMCL.Examples/      Исполняемые примеры
-docs/                       Матрица возможностей и источники
+tests/EMCL.Tests/            Tests by subsystem; shared data and doubles in Support
+examples/EMCL.Examples/      Runnable examples
+docs/                       Capability matrix and sources
 ```
 
-Каталоги группируют файлы по назначению. Namespace соответствует корневому namespace проекта и относительному пути: например, `src/EMCL.Core/Access/AttributeAccess.cs` использует `EMCL.Core.Access`, а `src/EMCL.Protocol/Acse/AcseCodec.cs` — `EMCL.Protocol.Acse`. Соответствие проверяется анализатором `IDE0130` при сборке.
+Directories group files by responsibility. Each namespace matches the project's root namespace and relative path: for example, `src/EMCL.Core/Access/AttributeAccess.cs` uses `EMCL.Core.Access`, and `src/EMCL.Protocol/Acse/AcseCodec.cs` uses `EMCL.Protocol.Acse`. The `IDE0130` analyzer checks this during builds.
 
-## Сборки
+## Assemblies
 
-| Сборка | Назначение |
+| Assembly | Purpose |
 | --- | --- |
-| `EMCL.Core` | Идентификаторы, значения, дескрипторы, состояние и контракты расширения |
-| `EMCL.Protocol` | A-XDR, BER/ACSE, LN APDU, сборка GET-блоков |
-| `EMCL.Client` | Клиентская LN-ассоциация, GET/SET/ACTION, invoke ID, сроки выполнения и загрузка каталога |
-| `EMCL.Objects` | Каталог, импорт ассоциации, диспетчер, локальные обработчики |
-| `EMCL.Framing.Hdlc` | Кадры type 3, CRC, LLC, сборка сегментов |
+| `EMCL.Core` | Identifiers, values, descriptors, state, and extension contracts |
+| `EMCL.Protocol` | A-XDR, BER/ACSE, LN APDUs, and GET block assembly |
+| `EMCL.Client` | LN client associations, GET/SET/ACTION, invoke IDs, deadlines, and catalog loading |
+| `EMCL.Objects` | Catalog, association import, dispatcher, and local handlers |
+| `EMCL.Framing.Hdlc` | Type 3 frames, CRC, LLC, and segment assembly |
 | `EMCL.Framing.Wrapper` | Wrapper v1 |
-| `EMCL.Transport` | `IByteTransport`, `IApduChannel`, `TcpByteTransport`, `SerialByteTransport`, `StreamByteTransport`, канал с внедряемым кодеком кадров |
-| `EMCL` | Компоновка определений классов, адаптеров, Wrapper/HDLC APDU-каналов и endpoint |
+| `EMCL.Transport` | `IByteTransport`, `IApduChannel`, `TcpByteTransport`, `SerialByteTransport`, `StreamByteTransport`, and a channel with an injectable frame codec |
+| `EMCL` | Composition of class definitions, adapters, Wrapper/HDLC APDU channels, and endpoints |
 
-`Protocol` не ссылается на транспорт, HDLC или Wrapper. Стандартные определения и обработчики находятся в `Objects`; каждый составленный прибор получает собственные экземпляры обработчиков.
+`Protocol` has no references to transport, HDLC, or Wrapper. Standard definitions and handlers live in `Objects`; each composed device gets its own handler instances.
 
 ```text
 IByteTransport
   → IIncrementalCodec<Frame>
-  → IFramePayloadAdapter<Frame>       HDLC: сегменты → LLC; Wrapper: payload
+  → IFramePayloadAdapter<Frame>       HDLC: segments → LLC; Wrapper: payload
   → IApduChannel
   → IIncrementalCodec<DlmsApdu>
-  → IDlmsPipeline                    middleware → доступ → проверка → обработчик
+  → IDlmsPipeline                    middleware → access → validation → handler
 ```
 
-Обратное направление использует те же кодеки. `GetBlockAssembler` собирает данные xDLMS отдельно от сегментации HDLC.
+The reverse direction uses the same codecs. `GetBlockAssembler` assembles xDLMS data independently of HDLC segmentation.
 
-## Быстрый пример
+## Quick example
 
 ```csharp
 using EMCL.Composition;
@@ -143,15 +155,15 @@ var result = await device.Pipeline.ExecuteAsync(
 Console.WriteLine(result.Value!.AsUInt64());
 ```
 
-Модель универсальная: class ID, версия, logical name, дескриптор и значения по индексам. `ClassKey` содержит class ID и точную версию; определения можно заменить через `ClassRegistry`. По умолчанию время в Clock, Extended Register и Demand Register кодируется как `DlmsType.OctetString`; для прибора с тегом `DlmsType.DateTime` зарегистрируйте соответствующие определения через `ClockClassDefinition`, `ExtendedRegisterClassDefinition` и `DemandRegisterClassDefinition` до импорта или `Build`. Разные наборы определений создавайте в отдельных `EmclBuilder`. Одно логическое устройство использует одну версию каждого класса; разные устройства независимы.
+The model is generic: class ID, version, logical name, descriptor, and values by index. `ClassKey` contains the class ID and exact version; definitions can be replaced through `ClassRegistry`. By default, time in Clock, Extended Register, and Demand Register is encoded as `DlmsType.OctetString`; for a meter using the `DlmsType.DateTime` tag, register the appropriate definitions through `ClockClassDefinition`, `ExtendedRegisterClassDefinition`, and `DemandRegisterClassDefinition` before import or `Build`. Use separate `EmclBuilder` instances for different definition sets. Each logical device uses one version of each class; devices are independent.
 
-`DlmsValue` сохраняет DLMS-тег. Enum и unsigned, array и structure различаются. Байты и коллекции копируются в неизменяемое представление. `CosemDateTime` сохраняет все 12 октетов, включая специальные поля, deviation и status; вызов `ToDateTimeOffset()` допустим только для конкретной даты со смещением.
+`DlmsValue` preserves the DLMS tag. Enum and unsigned, and array and structure remain distinct. Bytes and collections are copied into immutable representations. `CosemDateTime` preserves all 12 octets, including special fields, deviation, and status; `ToDateTimeOffset()` is valid only for a concrete date with an offset.
 
-В коде приложения доступны именованные идентификаторы: `CosemClassIds.Register`, `RegisterMembers.Version0`, `RegisterMembers.Attributes.Value`, `RegisterMembers.Methods.Reset`. Теги APDU представлены `ApduTag`, режимы доступа — `AttributeAccessModeV1`, `MethodAccessModeV1` и `AccessModeV3`. Идентификаторы не требуют приведения к enum при создании пользовательских классов: модель по-прежнему принимает произвольные class ID и индексы.
+Application code can use named identifiers: `CosemClassIds.Register`, `RegisterMembers.Version0`, `RegisterMembers.Attributes.Value`, and `RegisterMembers.Methods.Reset`. APDU tags use `ApduTag`; access modes use `AttributeAccessModeV1`, `MethodAccessModeV1`, and `AccessModeV3`. Custom classes do not require casting identifiers to enums: the model still accepts arbitrary class IDs and indices.
 
-## Импорт ассоциации
+## Association import
 
-Файл содержит непосредственно одно A-XDR-значение `object_list`: без GET-response, Wrapper, LLC и HDLC. Поток читается до EOF, лишние байты и незавершённые данные отклоняются. Для сетевого потока сначала получите полное значение из APDU или GET-блоков.
+The file contains exactly one A-XDR `object_list` value, without a GET-response, Wrapper, LLC, or HDLC envelope. The stream is read to EOF; trailing bytes and incomplete data are rejected. For a network stream, first obtain the complete value from an APDU or GET blocks.
 
 ```csharp
 using EMCL.Composition;
@@ -170,17 +182,17 @@ var response = await device.Pipeline.ExecuteAsync(
     device.CreateContext());
 ```
 
-Импорт создаёт новый каталог атомарно; значения атрибутов в `object_list` отсутствуют. Чтение незагруженного значения возвращает `ObjectUnavailable`. Повторяющиеся logical name, неверная структура и разные версии одного класса внутри устройства отклоняются.
+Import atomically creates a new catalog; `object_list` contains no attribute values. Reading an unloaded value returns `ObjectUnavailable`. Duplicate logical names, invalid structures, and different versions of the same class within a device are rejected.
 
-Версия Association LN задаётся явно: права v1 — перечисления, v3 — битовые требования. Они сохраняются в `AssociationAccessContext`, отдельно от объектов. Если импорт относится к объекту ассоциации с именем, отличным от `0.0.40.0.0.255`, передайте `associationObject` в `Build`.
+Specify the Association LN version explicitly: v1 rights are enumerations, while v3 rights are bit requirements. They are stored in `AssociationAccessContext`, separately from objects. If the import belongs to an association object other than `0.0.40.0.0.255`, pass `associationObject` to `Build`.
 
-`CreateContext()` получает актуальный снимок прав. После локальных Association add/remove создайте новый контекст; ранее выданные снимки неизменяемы. Удаление объекта из одной ассоциации удаляет его видимость, сохраняя общий объект устройства.
+`CreateContext()` obtains the current permission snapshot. After local Association add/remove operations, create a new context; previously issued snapshots are immutable. Removing an object from one association removes its visibility while retaining the shared device object.
 
-Контекст без ассоциации (`LocalContext`) предназначен для локального использования и не ограничивает доступ правами ассоциации. Контекст с ассоциацией проверяет права; отсутствующее разрешение означает отказ. Признаки аутентификации, шифрования и подписи устанавливает доверенный слой приложения после соответствующих проверок. Сами кодеки ACSE не подтверждают подлинность.
+A context without an association (`LocalContext`) is intended for local use and does not restrict access by association permissions. A context with an association checks permissions; a missing permission means access is denied. A trusted application layer sets authentication, encryption, and signature flags after the corresponding checks. ACSE codecs do not authenticate peers themselves.
 
-## Свои объекты и обработчики
+## Custom objects and handlers
 
-Неизвестная пара class ID/версия сохраняется без автоматического выбора ближайшей версии. Из `object_list` известны идентификаторы и права, но не типы атрибутов или алгоритмы методов. Добавьте дескриптор явно:
+Unknown class ID/version pairs are preserved without automatically selecting the nearest known version. `object_list` provides identifiers and permissions, but not attribute types or method implementations. Add a descriptor explicitly:
 
 ```csharp
 using EMCL.Core.Descriptors;
@@ -192,20 +204,20 @@ builder.Definitions.Register(new CosemClassDescriptor(
     [new(1, "logical_name", DlmsType.OctetString), new(2, "reading", DlmsType.UInt16)],
     [new(1, "command", DlmsType.UInt8)]));
 
-// Для ранее импортированных экземпляров:
+// For previously imported instances:
 device.Catalog.Rebind(builder.Definitions);
 ```
 
-Реализуйте `ICosemObjectHandler` или унаследуйте `StoredValueHandler`, переопределив нужную операцию. Полный компилируемый пример находится в `EMCL.Examples`.
+Implement `ICosemObjectHandler` or derive from `StoredValueHandler` and override the required operation. A complete compilable example is available in `EMCL.Examples`.
 
 ```csharp
 device.Handlers.ForClass(key, myHandler);
 device.Handlers.ForInstance("meter-1", LogicalName.Parse("0.0.128.1.0.255"), specialHandler);
 ```
 
-Приоритет: обработчик экземпляра → пользовательский обработчик класса и версии → стандартный → универсальный. Приоритет экземпляра включает идентификатор логического устройства.
+Precedence: instance handler → custom class/version handler → standard handler → generic handler. Instance lookup includes the logical device identifier.
 
-Для замены одного атрибута или метода оберните действующий обработчик:
+To replace a single attribute or method, wrap the existing handler:
 
 ```csharp
 using EMCL.Core.Operations;
@@ -221,22 +233,22 @@ var overridden = new ObjectHandlerOverrides(original)
 device.Handlers.ForInstance(device.Catalog.LogicalDeviceId, target.LogicalName, overridden);
 ```
 
-Другие точки расширения:
+Other extension points:
 
-- `IClassDefinitionProvider` — внешний каталог определений; последняя регистрация провайдера имеет приоритет, явное определение приоритетнее провайдеров.
-- `ICosemObjectFactory` и `IObjectStateStore` — создание объектов и хранение состояния.
-- `IValueConverter` — преобразование входных значений Write/Invoke перед валидацией.
-- `IValueValidator` и `IAccessPolicy` — проверка операций и разрешений.
-- `IDlmsMiddleware` — перехват операций в порядке регистрации; `device.Pipeline` — полная замена пайплайна операций.
-- `IClockSource` — источник времени; `ICaptureValueSource` — получение захватываемых значений.
-- `TimeProvider` и `IDemandValueCalculator` — время измерений и расчёт Demand Register; настраиваются через `MeasurementTimeProvider` и `DemandCalculatorFactory` в builder.
-- `IIncrementalCodec<T>`, `IFramePayloadAdapter<T>`, `IByteTransport`, `IApduChannel` — независимая замена любого уровня обмена.
+- `IClassDefinitionProvider`: an external definition catalog; the most recently registered provider takes precedence, and explicit definitions override providers.
+- `ICosemObjectFactory` and `IObjectStateStore`: object creation and state storage.
+- `IValueConverter`: conversion of incoming Write/Invoke values before validation.
+- `IValueValidator` and `IAccessPolicy`: operation and permission checks.
+- `IDlmsMiddleware`: operation interception in registration order; `device.Pipeline` allows replacing the entire operation pipeline.
+- `IClockSource`: the clock source; `ICaptureValueSource`: retrieval of captured values.
+- `TimeProvider` and `IDemandValueCalculator`: measurement time and Demand Register calculations, configured through the builder's `MeasurementTimeProvider` and `DemandCalculatorFactory`.
+- `IIncrementalCodec<T>`, `IFramePayloadAdapter<T>`, `IByteTransport`, and `IApduChannel`: independent replacement of any communication layer.
 
-Настройте реестры до конкурентного использования. Стандартный диспетчер сериализует операции одного объекта. Захват нескольких объектов не является транзакционным снимком устройства; для такого требования внедрите `ICaptureValueSource` с нужной синхронизацией. Пользовательские хранилища и обработчики отвечают за собственную потокобезопасность.
+Configure registries before concurrent use. The default dispatcher serializes operations on each object. Capturing multiple objects does not produce a transactional device snapshot; inject an `ICaptureValueSource` with the required synchronization if needed. Custom stores and handlers are responsible for their own thread safety.
 
-## Транспорт и кадры
+## Transport and framing
 
-`ApduChannelSettings` хранит одну фабрику физического соединения и один выбор кадрирования. `ApduChannels.ConnectAsync` вызывает фабрику ровно один раз и возвращает готовый `IApduChannel`. Пример Wrapper/TCP:
+`ApduChannelSettings` holds one physical connection factory and one framing choice. `ApduChannels.ConnectAsync` calls the factory exactly once and returns a ready-to-use `IApduChannel`. Wrapper/TCP example:
 
 ```csharp
 using EMCL.Core.Objects;
@@ -259,9 +271,9 @@ await endpoint.SendAsync(new LnRequest(invokeIdAndPriority,
 var apdu = await endpoint.ReceiveAsync();
 ```
 
-Для HDLC замените только `Framing` на `new ApduFraming.Hdlc(HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(5))`. Канал выполняет SNRM/UA, ведёт порядковые номера, подтверждает входящие сегменты RR и отправляет DISC при освобождении. Он не делает повторов и пока требует, чтобы исходящий APDU помещался в один согласованный information frame. Для низкоуровневого управления кадрами доступны `HdlcCodec` и `HdlcApduAdapter`.
+For HDLC, replace only `Framing` with `new ApduFraming.Hdlc(HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(5))`. The channel performs SNRM/UA setup, tracks sequence numbers, acknowledges incoming segments with RR, and sends DISC on disposal. It does not perform retries and currently requires each outgoing APDU to fit a single negotiated information frame. `HdlcCodec` and `HdlcApduAdapter` are available for low-level frame control.
 
-Для прямого Serial-подключения используйте `SerialByteTransportFactory`:
+For a direct Serial connection, use `SerialByteTransportFactory`:
 
 ```csharp
 var settings = new ApduChannelSettings(
@@ -271,17 +283,17 @@ var settings = new ApduChannelSettings(
 await using var channel = await ApduChannels.ConnectAsync(settings, cancellationToken);
 ```
 
-`PortName` принимает имя ОС: `COM3` в Windows, `/dev/ttyUSB0` в Linux или `/dev/cu.usbserial-...` в macOS. `SerialPortSettings` задаёт скорость, число бит, чётность, стоп-биты, flow control, DTR и RTS; по умолчанию 9600 8N1 без flow control. Канал владеет портом и закрывает его при освобождении. Отмена активного чтения или записи тоже закрывает порт; для продолжения откройте новое соединение. Таймаут открытия возвращается без ожидания зависшего нативного открытия; если оно завершится позже, порт будет закрыт. IEC 62056-21 sign-on и автоматическое переключение скорости не выполняются. Консольный шаблон: `examples/EMCL.Examples/meter.serial.example.json`.
+`PortName` accepts an OS port name: `COM3` on Windows, `/dev/ttyUSB0` on Linux, or `/dev/cu.usbserial-...` on macOS. `SerialPortSettings` defines baud rate, data bits, parity, stop bits, flow control, DTR, and RTS; the default is 9600 8N1 without flow control. The channel owns the port and closes it on disposal. Canceling an active read or write also closes the port; open a new connection to continue. An open timeout returns without waiting for a stalled native open; if that open completes later, the port is closed. IEC 62056-21 sign-on and automatic baud-rate switching are not performed. Console template: `examples/EMCL.Examples/meter.serial.example.json`.
 
-Для иного соединения реализуйте `IByteTransportFactory.ConnectAsync`, возвращающий пользовательский `IByteTransport`, и передайте фабрику в `ApduChannelSettings.Connection`. `ReadAsync` транспорта возвращает число принятых байтов (ноль только при EOF), `WriteAsync` передаёт весь буфер либо выбрасывает исключение, `DisposeAsync` освобождает соединение. Канал владеет полученным транспортом. Для уже открытого потока доступен `StreamByteTransport` и низкоуровневые методы `ApduChannels.Wrapper`/`ConnectHdlcAsync`. Если источник уже отдаёт готовые APDU, реализуйте `IApduChannel` напрямую.
+For another connection type, implement `IByteTransportFactory.ConnectAsync` to return a custom `IByteTransport`, and pass the factory to `ApduChannelSettings.Connection`. The transport's `ReadAsync` returns the number of bytes received (zero only at EOF), `WriteAsync` sends the entire buffer or throws, and `DisposeAsync` releases the connection. The channel owns the returned transport. For an already open stream, use `StreamByteTransport` and the low-level `ApduChannels.Wrapper`/`ConnectHdlcAsync` methods. If the source already supplies complete APDUs, implement `IApduChannel` directly.
 
-`IByteTransport.WriteAsync` обязан записать весь буфер либо завершиться исключением. `IApduChannel.ReceiveAsync` возвращает один завершённый APDU с принадлежащими результату байтами; `null` означает чистый EOF. Datagram-транспорт может реализовать `IApduChannel` напрямую. Канал кадров сохраняет неполные данные между чтениями, поддерживает несколько кадров за чтение и общие флаги HDLC. Обрыв кадра или сегментированного сообщения приводит к `EndOfStreamException`.
+`IByteTransport.WriteAsync` must write the entire buffer or throw. `IApduChannel.ReceiveAsync` returns one complete APDU with bytes owned by the result; `null` means clean EOF. A datagram transport can implement `IApduChannel` directly. The framing channel retains incomplete data between reads, supports multiple frames per read and shared HDLC flags. A truncated frame or segmented message causes `EndOfStreamException`.
 
-После ошибки кадров канал закрывает дальнейшую обработку с явной ошибкой; не выполняется скрытая ресинхронизация. Для собственного восстановления замените канал или адаптер. Endpoint остаётся низкоуровневым инструментом. Готовое управление ассоциацией и сопоставление ответов предоставляет `DlmsClientSession`.
+After a framing error, the channel rejects further processing with an explicit error; it does not silently resynchronize. Replace the channel or adapter to implement custom recovery. The endpoint remains a low-level tool. `DlmsClientSession` provides association management and response correlation.
 
-## Клиентская LN-сессия
+## Logical Name client session
 
-`DlmsClientSession` получает уже подключённый `IApduChannel`: прямой APDU-канал или результат `ApduChannels.ConnectAsync`. Консольный пример хранит соединение и кадрирование в одной конфигурации канала; библиотека открывает выбранное TCP- или Serial-соединение и оставляет журналирование кадров приложению. Сессия находится в отдельной сборке `EMCL.Client`, которая не зависит от кадров.
+`DlmsClientSession` receives an already connected `IApduChannel`: either a direct APDU channel or the result of `ApduChannels.ConnectAsync`. The console example stores connection and framing settings in one channel configuration; the library opens the selected TCP or Serial connection and leaves frame logging to the application. The session lives in the separate `EMCL.Client` assembly, which is independent of framing.
 
 ```csharp
 using EMCL.Client.Sessions;
@@ -301,59 +313,59 @@ var imported = await client.LoadCatalogAsync(
 await client.ReleaseAsync(cancellationToken);
 ```
 
-Для постепенного чтения `object_list` вызовите `OpenObjectListAsync(importer, associationVersion)`. Он возвращает одноразовый `AssociationObjectStream` после чтения заголовка массива: `TotalCount` содержит объявленное прибором число записей, а `CurrentCount` увеличивается при выдаче каждой записи через `await foreach`. Освобождайте поток через `await using`; завершение перечисления проверяет, что получены все записи и нет лишних данных. `LoadCatalogAsync` использует тот же поток и возвращает каталог только после полной проверки.
+To read `object_list` incrementally, call `OpenObjectListAsync(importer, associationVersion)`. It returns a single-use `AssociationObjectStream` after reading the array header: `TotalCount` contains the number of entries advertised by the meter, and `CurrentCount` increases as each entry is yielded through `await foreach`. Dispose the stream with `await using`; completing enumeration verifies that all entries were received and no trailing data remains. `LoadCatalogAsync` uses the same stream and returns a catalog only after full validation.
 
-Пример для открытой клиентской ассоциации, вместо `LoadCatalogAsync`:
+Example for an open client association, used in place of `LoadCatalogAsync`:
 
 ```csharp
 await using var objects = await client.OpenObjectListAsync(
     builder.CreateImporter(), AssociationLnMembers.Version3,
     cancellationToken: cancellationToken);
-Console.WriteLine($"Объявлено объектов: {objects.TotalCount}");
+Console.WriteLine($"Advertised objects: {objects.TotalCount}");
 await foreach (var entry in objects.WithCancellation(cancellationToken))
 {
     Console.WriteLine($"{objects.CurrentCount}/{objects.TotalCount}: {entry.LogicalName}");
 }
 ```
 
-`TotalCount` включает повторяющиеся записи прибора. Досрочное освобождение потока отменяет незавершённый GET и может перевести сессию в `Faulted`; перечислите поток до конца перед следующими операциями.
+`TotalCount` includes duplicate entries from the meter. Disposing the stream early cancels an incomplete GET and may move the session to `Faulted`; enumerate the stream to completion before starting further operations.
 
-Доступны `SetAsync`, `ActionAsync` и `ExecuteAsync`. Удобные методы выбрасывают `DlmsOperationException` при ошибке прибора; `ExecuteAsync` возвращает `LnResponse` с исходным кодом результата и отдельным ACTION return-data error. Успешный GET с block transfer автоматически собирается в одно A-XDR-значение. GET-next подтверждает номер последнего принятого блока. Импорт каталога использует явно выбранную версию Association LN; текущие значения объектов из списка не выводятся.
+`SetAsync`, `ActionAsync`, and `ExecuteAsync` are also available. Convenience methods throw `DlmsOperationException` on a meter error; `ExecuteAsync` returns an `LnResponse` with the original result code and a separate ACTION return-data error. A successful GET using block transfer is automatically assembled into one A-XDR value. GET-next acknowledges the last received block number. Catalog import uses an explicitly selected Association LN version; current object values cannot be inferred from the list.
 
-По умолчанию сессия выполняет один запрос за раз. `MaxConcurrentRequests` разрешает до 16 независимых обменов, если прибор поддерживает такую нагрузку. Ответы сопоставляются по invoke ID, сервису и полному invoke-id-and-priority; передача сериализуется, чтение выполняется одним фоновым обработчиком. Таймаут `RequestTimeout` ограничивает целый обмен, включая все GET-блоки. Ожидание свободного места в очереди ограничивается токеном вызывающего кода. `TimeProvider` позволяет заменить источник сроков выполнения.
+By default, the session executes one request at a time. `MaxConcurrentRequests` permits up to 16 independent exchanges if the meter supports that load. Responses are matched by invoke ID, service, and the full invoke-id-and-priority byte; writes are serialized, and one background reader handles input. `RequestTimeout` covers the entire exchange, including all GET blocks. Waiting for queue capacity is bounded by the caller's cancellation token. `TimeProvider` allows replacing the deadline time source.
 
-Отмена до отправки сохраняет ассоциацию. Отмена или таймаут после попытки отправки, неверный ответ, EOF или превышение входных лимитов переводит её в `Faulted` и завершает остальные ожидающие операции. Это предотвращает использование запоздалого ответа в новом обмене. Автоматических повторов нет. Сессия рассчитана на одну ассоциацию: после `Released` или `Faulted` создайте новую сессию на подходящем канале.
+Cancellation before sending preserves the association. Cancellation or a timeout after a send attempt, an invalid response, EOF, or exceeded input limits moves it to `Faulted` and completes all other pending operations. This prevents a delayed response from being reused in a new exchange. There are no automatic retries. A session supports one association: after `Released` or `Faulted`, create a new session on an appropriate channel.
 
-`ReleaseAsync` перестаёт принимать новые операции, дожидается начатых и выполняет RLRQ/RLRE. `DisposeAsync` отменяет и дожидается операций и ввода-вывода, затем освобождает канал; `LeaveOpen = true` оставляет канал приложению. Пользовательский канал должен поддерживать отмену чтения и записи. Повторный Dispose безопасен. После аварийного завершения переиспользование оставленного канала требует явного восстановления приложением.
+`ReleaseAsync` stops accepting new operations, drains existing operations, and performs RLRQ/RLRE. `DisposeAsync` cancels and awaits operations and I/O, then disposes the channel; `LeaveOpen = true` leaves the channel to the application. Custom channels must support read and write cancellation. Repeated disposal is safe. After a failure, reusing a channel left open requires explicit application recovery.
 
-Предложенный conformance проверяется по реализованному набору. Сервисы и selective access разрешены только после согласования. Максимальные размеры приёма клиента и сервера независимы; протокольный ноль означает отсутствие лимита, но `ProtocolLimits` всегда действуют. Ненулевые размеры ниже 12 зарезервированы. Буферы уведомлений и GET-блоков ограничены; начальный GET-блок должен иметь номер 1. `NotificationCapacity` не должна превышать `MaxCollectionItems`, а ненулевой рекламируемый размер приёма — `MaxMessageBytes`.
+Proposed conformance is checked against the implemented feature set. Services and selective access are enabled only after negotiation. Client and server maximum receive sizes are independent; a protocol value of zero means unlimited, but `ProtocolLimits` always apply. Nonzero sizes below 12 are reserved. Notification and GET block buffers are bounded; the first GET block must be numbered 1. `NotificationCapacity` must not exceed `MaxCollectionItems`, and a nonzero advertised receive size must not exceed `MaxMessageBytes`.
 
-`ReadNotificationsAsync` принимает согласованные DataNotification независимо от ожидающих запросов. Приложение должно опустошать буфер; переполнение завершает сессию с явной ошибкой. Отмена перечисления уведомлений не отменяет сессию.
+`ReadNotificationsAsync` receives negotiated DataNotification messages independently of pending requests. The application must drain the buffer; overflow terminates the session with an explicit error. Canceling notification enumeration does not cancel the session.
 
-Настройки `LnAssociationOptions` поддерживают отсутствие аутентификации, LLS и HLS High (AES-128 challenge-response) через неизменяемые байты `Password`. HLS High вызывает метод Association LN и проверяет ответ до открытия сессии. Для другого механизма реализуйте `IClientAssociationNegotiator` и `IClientHighLevelAuthenticator`; для представления APDU — `IIncrementalCodec<DlmsApdu>`; весь клиент заменяется через `IDlmsClientSession`. Защищённые APDU требуют отдельной реализации. Полный жизненный цикл HDLC с ARQ и повторы остаются следующими этапами.
+`LnAssociationOptions` supports no authentication, LLS, and HLS High (AES-128 challenge-response) through immutable `Password` bytes. HLS High invokes the Association LN method and validates the response before opening the session. To implement another mechanism, provide `IClientAssociationNegotiator` and `IClientHighLevelAuthenticator`; to replace APDU representation, provide `IIncrementalCodec<DlmsApdu>`; to replace the entire client, implement `IDlmsClientSession`. Protected APDUs require a separate implementation. Full HDLC lifecycle management with ARQ and retries remains future work.
 
-Полный исполняемый пример с локальным объектным пайплайном: [ClientSessionExample.cs](examples/EMCL.Examples/Client/ClientSessionExample.cs). Тестовый peer в примере демонстрирует обмен и не является готовой серверной сессией.
+A complete runnable example with a local object pipeline is available in [ClientSessionExample.cs](examples/EMCL.Examples/Client/ClientSessionExample.cs). The example's test peer demonstrates the exchange and is not a ready-to-use server session.
 
-## Блоки, ограничения и локальное выполнение
+## Blocks, limits, and local execution
 
-Для GET block transfer вызовите `GetBlockAssembler.Begin` с ключом канала, устройства, ассоциации и invoke ID. Передавайте `GetBlockResponse` в `Accept`; после последнего блока декодируйте полученные байты через `AxdrCodec`. Повтор или пропуск блока завершает сборку ошибкой. `Abort` освобождает незавершённый обмен. Повторное использование invoke ID требует нового `Begin`.
+For GET block transfer, call `GetBlockAssembler.Begin` with a key containing the channel, device, association, and invoke ID. Pass `GetBlockResponse` to `Accept`; after the final block, decode the resulting bytes with `AxdrCodec`. A duplicate or skipped block fails assembly. `Abort` releases an incomplete exchange. Reusing an invoke ID requires a new `Begin`.
 
-`ProtocolLimits` ограничивает размер сообщений, глубину вложенности, число элементов и число блоков. Значения по умолчанию: 1 MiB, 64 уровня, 100 000 элементов, 4096 блоков. В компоновке вручную передавайте одинаковые параметры кодекам, сборщикам и каналу. Ограничения HDLC (2047 октетов без флагов) и Wrapper (65535 октетов payload) действуют дополнительно.
+`ProtocolLimits` bounds message size, nesting depth, item count, and block count. Defaults: 1 MiB, 64 levels, 100,000 items, and 4096 blocks. When composing components manually, pass the same settings to codecs, assemblers, and the channel. HDLC limits (2047 octets excluding flags) and Wrapper limits (65535 payload octets) apply in addition.
 
-Локальные обработчики:
+Local handlers:
 
-- Data: чтение/запись имеющихся значений.
-- Register: чтение/запись и reset числового значения в ноль с сохранением типа. Для другого значения сброса зарегистрируйте `RegisterHandler` со своей функцией.
-- Extended Register v0: фиксация значения/status и capture_time, reset с сохранением status. Тип времени задаётся определением класса.
-- Demand Register v0: текущая/последняя средняя величина, reset/next_period, подача измерений и ограниченное окно выборок. Стандартный калькулятор — Float64 со средним одинаково взвешенных выборок; интегрирование энергии, вес по времени и округление задаются своим `IDemandValueCalculator`. Сбор измерений и переходы периодов запускает приложение.
-- Register Activation v0: назначения регистров, создание/замена/удаление масок и выбор active_mask. Приложение запрашивает `IsEnabledAsync` перед измерением. Индексы маски начинаются с 1, максимум 255 назначений; выбранную маску можно удалить после выбора другой.
-- Clock: частичная установка времени, корректировки, preset и shift через `IClockSource`. `MemoryClockSource` хранит частный сдвиг относительно `TimeProvider`, не изменяя часы ОС. Это локальная модель; планирование DST и физическое плавное управление часами предоставляются источником приложения через `ShiftTime`.
-- Association LN: видимый список, add/remove объектов, управление пользователями v3; локальная серверная обработка HLS и изменение HLS-секрета требуют внешнего security handler.
-- Profile Generic: capture/reset, FIFO/LIFO и четыре сортировки по значению, ёмкость, array/compact-array, селекторы диапазона и записей. Изменение capture_objects очищает буфер и зависимые профили. Автоматический периодический capture запускает приложение. Восстановление сокращённых значений `null-data` из предыдущих записей не выполняется неявно.
+- Data: reading and writing existing values.
+- Register: reading, writing, and resetting a numeric value to zero while preserving its type. For a different reset value, register a `RegisterHandler` with a custom function.
+- Extended Register v0: capturing value/status and capture_time, and resetting while preserving status. The class definition specifies the time type.
+- Demand Register v0: current/last average, reset/next_period, measurement input, and a bounded sample window. The default calculator returns a Float64 mean with equal sample weights; provide a custom `IDemandValueCalculator` for energy integration, time weighting, and rounding. The application schedules measurement collection and period transitions.
+- Register Activation v0: register assignments, creating/replacing/deleting masks, and selecting active_mask. The application calls `IsEnabledAsync` before measuring. Mask indices start at 1, with at most 255 assignments; select another mask before deleting the active one.
+- Clock: partial time setting, adjustments, preset, and shift through `IClockSource`. `MemoryClockSource` maintains a private offset from `TimeProvider` without changing the OS clock. This is a local model; the application's time source provides DST scheduling and physical gradual clock adjustment through `ShiftTime`.
+- Association LN: visible object list, adding/removing objects, and v3 user management; local server-side HLS processing and HLS secret changes require an external security handler.
+- Profile Generic: capture/reset, FIFO/LIFO and four value-based sort orders, capacity, array/compact-array, and range/entry selectors. Changing capture_objects clears the buffer and dependent profiles. The application schedules automatic periodic capture. Abbreviated `null-data` values are not implicitly reconstructed from previous rows.
 
-Подробная матрица возможностей и используемые источники — в [docs/COVERAGE.md](docs/COVERAGE.md).
+The detailed capability matrix and sources are in [docs/COVERAGE.md](docs/COVERAGE.md).
 
-Пример локального измерения Extended Register:
+Example of a local Extended Register measurement:
 
 ```csharp
 using EMCL.Objects.Registers;
@@ -366,10 +378,10 @@ var captured = await handler.CaptureAsync(
     extended, DlmsValue.Number(DlmsType.UInt32, 500));
 ```
 
-Producer API выполняется локально без проверки прав ассоциации и использует тот же объектный lock, что и диспетчер. Получайте обработчик до установки обёрток или сохраняйте ссылку на собственный экземпляр. Исполняемый пример всех трёх новых классов находится в [RegisterExamples.cs](examples/EMCL.Examples/Registers/RegisterExamples.cs).
+The producer API executes locally without checking association permissions and uses the same object lock as the dispatcher. Obtain the handler before installing wrappers or retain a reference to your own instance. A runnable example of all three new classes is in [RegisterExamples.cs](examples/EMCL.Examples/Registers/RegisterExamples.cs).
 
-Для приборов, передающих время тегом date-time (25), зарегистрируйте определения Extended/Demand Register с `DlmsType.DateTime`.
+For meters that transmit time with the date-time tag (25), register Extended/Demand Register definitions using `DlmsType.DateTime`.
 
-## Лицензия
+## License
 
-Проект распространяется по лицензии MIT. Полный текст и уведомление об авторских правах находятся в файле [LICENSE](LICENSE). Лицензия также включается во все библиотечные NuGet-пакеты.
+The project is distributed under the MIT license. The complete text and copyright notice are in [LICENSE](LICENSE). The license is also included in every library NuGet package.
