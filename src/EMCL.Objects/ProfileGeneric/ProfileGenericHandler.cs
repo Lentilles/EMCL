@@ -134,12 +134,12 @@ public sealed class ProfileGenericHandler(ObjectCatalog catalog, ICaptureValueSo
         Defaults(cosemObject);
         if (operation.Selection != null)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.ScopeOfAccessViolated));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.ScopeOfAccessViolated));
         }
 
         if (operation.Index == ProfileGenericMembers.Attributes.EntriesInUse)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.ReadWriteDenied));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.ReadWriteDenied));
         }
 
         if (operation.Index == ProfileGenericMembers.Attributes.CaptureObjects)
@@ -234,7 +234,7 @@ public sealed class ProfileGenericHandler(ObjectCatalog catalog, ICaptureValueSo
         Defaults(cosemObject);
         if (operation.Value?.Type != DlmsType.Int8 || operation.Value.AsInt64() != 0)
         {
-            return new(CosemError.TypeUnmatched);
+            return new(CosemResultCode.TypeUnmatched);
         }
 
         if (operation.Index == ProfileGenericMembers.Methods.Reset)
@@ -252,7 +252,7 @@ public sealed class ProfileGenericHandler(ObjectCatalog catalog, ICaptureValueSo
         foreach (var capture in Definitions(cosemObject))
         {
             var result = await captures.ReadAsync(capture, context, cancellationToken).ConfigureAwait(false);
-            if (result.Error != CosemError.Success)
+            if (result.Error != CosemResultCode.Success)
             {
                 return result;
             }

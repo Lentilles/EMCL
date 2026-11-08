@@ -125,10 +125,10 @@ public sealed class ClientSetBlockTransferTests
 
         Assert.Equal(rejectAt == 3, last);
         await peer.SendAsync(normalError
-            ? new LnResponse(CosemOperationKind.Write, first.InvokeIdAndPriority, new(CosemError.ReadWriteDenied))
-            : new SetBlockResponse(first.InvokeIdAndPriority, number, CosemError.ReadWriteDenied));
+            ? new LnResponse(CosemOperationKind.Write, first.InvokeIdAndPriority, new(CosemResultCode.ReadWriteDenied))
+            : new SetBlockResponse(first.InvokeIdAndPriority, number, CosemResultCode.ReadWriteDenied));
         var error = await Assert.ThrowsAsync<DlmsOperationException>(() => writing);
-        Assert.Equal(CosemError.ReadWriteDenied, error.Error);
+        Assert.Equal(CosemResultCode.ReadWriteDenied, error.Error);
         Assert.Equal(ClientSessionState.Associated, client.State);
         Assert.Equal(rejectAt + 1, channel.Sent.Count);
         await peer.ReleaseAsync(client);
@@ -158,7 +158,7 @@ public sealed class ClientSetBlockTransferTests
             await peer.SendAsync(new SetBlockResponse(invoke, 1));
             Assert.True((await peer.ReadAsync<SetBlockRequest>()).LastBlock);
             await peer.SendAsync(new SetBlockResponse(invoke, scenario == "last-number" ? 3u : scenario == "duplicate" ? 1u : 2u,
-                scenario == "last-number" ? CosemError.Success : null));
+                scenario == "last-number" ? CosemResultCode.Success : null));
         }
         else
         {
@@ -166,7 +166,7 @@ public sealed class ClientSetBlockTransferTests
                 ? new LnResponse(CosemOperationKind.Write, invoke, OperationResult.Ok())
                 : new SetBlockResponse(scenario == "wrong-id" ? (byte)(invoke + 1)
                     : scenario == "wrong-priority" ? (byte)(invoke ^ InvokeIdEncoding.HighPriority) : invoke,
-                    scenario == "wrong-number" ? 2u : 1u, scenario == "early-success" ? CosemError.Success : null));
+                    scenario == "wrong-number" ? 2u : 1u, scenario == "early-success" ? CosemResultCode.Success : null));
         }
 
         var error = await Assert.ThrowsAsync<DlmsWriteUnconfirmedException>(() => writing);
@@ -338,10 +338,10 @@ public sealed class ClientSetBlockTransferTests
         Assert.Equal(request2.InvokeIdAndPriority, (await peer.ReadAsync<SetBlockRequest>()).InvokeIdAndPriority);
         await peer.SendAsync(new SetBlockResponse(request1.InvokeIdAndPriority, 1));
         Assert.Equal(request1.InvokeIdAndPriority, (await peer.ReadAsync<SetBlockRequest>()).InvokeIdAndPriority);
-        await peer.SendAsync(new SetBlockResponse(request2.InvokeIdAndPriority, 2, CosemError.ReadWriteDenied));
-        await peer.SendAsync(new SetBlockResponse(request1.InvokeIdAndPriority, 2, CosemError.Success));
+        await peer.SendAsync(new SetBlockResponse(request2.InvokeIdAndPriority, 2, CosemResultCode.ReadWriteDenied));
+        await peer.SendAsync(new SetBlockResponse(request1.InvokeIdAndPriority, 2, CosemResultCode.Success));
         await first;
-        Assert.Equal(CosemError.ReadWriteDenied, (await Assert.ThrowsAsync<DlmsOperationException>(() => second)).Error);
+        Assert.Equal(CosemResultCode.ReadWriteDenied, (await Assert.ThrowsAsync<DlmsOperationException>(() => second)).Error);
         await peer.ReleaseAsync(client);
     }
 
@@ -363,7 +363,7 @@ public sealed class ClientSetBlockTransferTests
         Assert.Equal(ClientSessionState.Associated, client.State);
         await peer.SendAsync(new SetBlockResponse(first.InvokeIdAndPriority, 1));
         await peer.ReadAsync<SetBlockRequest>();
-        await peer.SendAsync(new SetBlockResponse(first.InvokeIdAndPriority, 2, CosemError.Success));
+        await peer.SendAsync(new SetBlockResponse(first.InvokeIdAndPriority, 2, CosemResultCode.Success));
         await writing;
         await peer.ReleaseAsync(client);
     }
@@ -406,7 +406,7 @@ public sealed class ClientSetBlockTransferTests
 
         Assert.False(writing.IsCompleted);
         AssertBytesEqual(new AxdrCodec().EncodeBytes(value), bytes.ToArray());
-        await peer.SendAsync(new SetBlockResponse(first.InvokeIdAndPriority, number, CosemError.Success));
+        await peer.SendAsync(new SetBlockResponse(first.InvokeIdAndPriority, number, CosemResultCode.Success));
         await writing;
     }
 

@@ -34,8 +34,8 @@ public static class ApduChannels
         if (settings.Framing is ApduFraming.Hdlc hdlc)
         {
             // HDLC link setup owns and disposes the transport if setup fails.
-            return await ConnectHdlcAsync(transport, hdlc.Local, hdlc.Remote, hdlc.LinkTimeout,
-                settings.Limits, hdlc.FrameObserver, cancellationToken).ConfigureAwait(false);
+            return await HdlcApduChannel.ConnectAsync(transport, hdlc, settings.Limits, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         try

@@ -17,7 +17,10 @@ internal sealed record LoadedConfiguration(MeterConfiguration Settings, ClientSe
             HdlcFramingSettings hdlc => new ApduFraming.Hdlc(
                 HdlcAddress.Client(hdlc.ClientAddress),
                 HdlcAddress.Server(hdlc.ServerLogicalAddress, hdlc.ServerPhysicalAddress,
-                    hdlc.ExtendedAddress), Session.RequestTimeout, frameObserver),
+                    hdlc.ExtendedAddress), Session.RequestTimeout, frameObserver)
+            {
+                AllowMissingClosingFlag = hdlc.AllowMissingClosingFlag
+            },
             _ => throw new ArgumentException("Unsupported channel framing.")
         };
         return new(channel.Connection.CreateFactory(ConnectTimeout), framing, Settings.Limits);

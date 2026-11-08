@@ -9,4 +9,4 @@ namespace EMCL.Protocol.Apdu;
 /// <param name="BlockNumber">The 32-bit data block number.</param>
 /// <param name="Data">The raw block payload or complete assembled bytes.</param>
 /// <param name="Error">The optional data-access error; null denotes a raw-data block.</param>
-public sealed record GetBlockResponse(byte InvokeIdAndPriority, bool LastBlock, uint BlockNumber, ImmutableArray<byte> Data, CosemError? Error = null) : DlmsApdu;
+public sealed record GetBlockResponse(byte InvokeIdAndPriority, bool LastBlock, uint BlockNumber, ImmutableArray<byte> Data, CosemResultCode? Error = null) : DlmsApdu;

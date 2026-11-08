@@ -14,7 +14,7 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
         AllowSynchronousContinuations = false
     });
     private bool waiting = true;
-    private bool blocksStarted;
+    private bool getBlocksStarted;
     private const uint FirstBlockNumber = 1;
     private uint expectedBlockNumber = FirstBlockNumber;
     private bool setBlocksStarted;
@@ -23,7 +23,7 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
     internal byte Invoke { get; } = invoke;
     internal byte Id => (byte)(Invoke & InvokeIdEncoding.IdMask);
 
-    // The session gate protects all routing state, including preparation for the next GET block.
+    // The session gate protects routing state and preparation for GET and SET blocks.
     internal void Deliver(DlmsApdu response)
     {
         if (!waiting)
@@ -31,43 +31,16 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
             throw new DlmsProtocolException("A duplicate or unsolicited response was received for an active invoke ID.");
         }
 
-        bool final;
-        switch (response)
+        bool completesExchange = response switch
         {
-            case LnResponse normal when normal.InvokeIdAndPriority == Invoke && normal.Kind == kind && !blocksStarted:
-                if (setBlocksStarted && normal.Result.Error == CosemError.Success)
-                {
-                    throw new DlmsProtocolException("A SET block transfer requires a final block result.");
-                }
-
-                final = true;
-                break;
-            case SetBlockResponse block when block.InvokeIdAndPriority == Invoke && kind == CosemOperationKind.Write && setBlocksStarted:
-                if (block.BlockNumber != expectedBlockNumber || lastSetBlock && !block.Result.HasValue
-                    || !lastSetBlock && block.Result == CosemError.Success)
-                {
-                    throw new DlmsProtocolException("The SET block acknowledgement number or final result is invalid.");
-                }
-
-                final = block.Result.HasValue;
-                break;
-            case GetBlockResponse block when block.InvokeIdAndPriority == Invoke && kind == CosemOperationKind.Read:
-                if (block.BlockNumber != expectedBlockNumber)
-                {
-                    throw new DlmsProtocolException("The GET block number is out of sequence.");
-                }
-
-                if (expectedBlockNumber != uint.MaxValue)
-                {
-                    expectedBlockNumber++;
-                }
-
-                blocksStarted = true;
-                final = block.LastBlock || block.Error.HasValue;
-                break;
-            default:
-                throw new DlmsProtocolException("The response service or invoke-id-and-priority does not match the request.");
-        }
+            LnResponse normal when normal.InvokeIdAndPriority == Invoke && normal.Kind == kind && !getBlocksStarted
+                => AcceptNormalResponse(normal),
+            SetBlockResponse block when block.InvokeIdAndPriority == Invoke && kind == CosemOperationKind.Write && setBlocksStarted
+                => AcceptSetBlock(block),
+            GetBlockResponse block when block.InvokeIdAndPriority == Invoke && kind == CosemOperationKind.Read
+                => AcceptGetBlock(block),
+            _ => throw new DlmsProtocolException("The response service or invoke-id-and-priority does not match the request.")
+        };
 
         waiting = false;
         if (!responses.Writer.TryWrite(response))
@@ -75,10 +48,47 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
             throw new DlmsProtocolException("The pending response buffer is full.");
         }
 
-        if (final)
+        if (completesExchange)
         {
             responses.Writer.TryComplete();
         }
+    }
+
+    private bool AcceptNormalResponse(LnResponse response)
+    {
+        if (setBlocksStarted && response.Result.Error == CosemResultCode.Success)
+        {
+            throw new DlmsProtocolException("A SET block transfer requires a final block result.");
+        }
+
+        return true;
+    }
+
+    private bool AcceptSetBlock(SetBlockResponse block)
+    {
+        if (block.BlockNumber != expectedBlockNumber || lastSetBlock && !block.Result.HasValue
+            || !lastSetBlock && block.Result == CosemResultCode.Success)
+        {
+            throw new DlmsProtocolException("The SET block acknowledgement number or final result is invalid.");
+        }
+
+        return block.Result.HasValue;
+    }
+
+    private bool AcceptGetBlock(GetBlockResponse block)
+    {
+        if (block.BlockNumber != expectedBlockNumber)
+        {
+            throw new DlmsProtocolException("The GET block number is out of sequence.");
+        }
+
+        if (expectedBlockNumber != uint.MaxValue)
+        {
+            expectedBlockNumber++;
+        }
+
+        getBlocksStarted = true;
+        return block.LastBlock || block.Error.HasValue;
     }
 
     // Called under the session gate before sending each block, so immediate replies can be correlated.
@@ -97,7 +107,7 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
 
     internal void PrepareNextBlock()
     {
-        if (waiting || !blocksStarted)
+        if (waiting || !getBlocksStarted)
         {
             throw new InvalidOperationException("The GET exchange is not ready for a continuation request.");
         }

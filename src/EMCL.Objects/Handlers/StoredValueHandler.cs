@@ -12,10 +12,10 @@ public class StoredValueHandler : ICosemObjectHandler
         cancellationToken.ThrowIfCancellationRequested();
         if (operation.Selection != null)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.ScopeOfAccessViolated));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.ScopeOfAccessViolated));
         }
 
-        return ValueTask.FromResult(cosemObject.State.TryGet(operation.Index, out var value) ? OperationResult.Ok(value) : new OperationResult(CosemError.ObjectUnavailable));
+        return ValueTask.FromResult(cosemObject.State.TryGet(operation.Index, out var value) ? OperationResult.Ok(value) : new OperationResult(CosemResultCode.ObjectUnavailable));
     }
 
     /// <inheritdoc />
@@ -24,12 +24,12 @@ public class StoredValueHandler : ICosemObjectHandler
         cancellationToken.ThrowIfCancellationRequested();
         if (operation.Index == CosemObject.LogicalNameAttributeIndex)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.ReadWriteDenied));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.ReadWriteDenied));
         }
 
         if (operation.Selection != null)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.ScopeOfAccessViolated));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.ScopeOfAccessViolated));
         }
 
         cosemObject.State.Set(operation.Index, operation.Value ?? throw new ArgumentException("Missing value."));
@@ -40,6 +40,6 @@ public class StoredValueHandler : ICosemObjectHandler
     public virtual ValueTask<OperationResult> InvokeAsync(CosemObject cosemObject, CosemOperation operation, OperationContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(new OperationResult(CosemError.ReadWriteDenied, Diagnostic: "Method is not implemented."));
+        return ValueTask.FromResult(new OperationResult(CosemResultCode.ReadWriteDenied, Diagnostic: "Method is not implemented."));
     }
 }

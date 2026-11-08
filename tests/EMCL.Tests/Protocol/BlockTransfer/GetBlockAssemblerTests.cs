@@ -25,22 +25,22 @@ public sealed class GetBlockAssemblerTests
         var done = c.Accept(a, new(0xc1, true, 2, [3]));
         Assert.True(done.Complete);
         AssertBytesEqual([1, 2, 3], done.Data.AsSpan());
-        Assert.Equal(CosemError.NoLongGetInProgress, c.Accept(a, new(0xc1, true, 2, [3])).Error);
+        Assert.Equal(CosemResultCode.NoLongGetInProgress, c.Accept(a, new(0xc1, true, 2, [3])).Error);
         c.Begin(a);
-        Assert.Equal(CosemError.DataBlockNumberInvalid, c.Accept(a, new(0xc1, true, 2, [])).Error);
+        Assert.Equal(CosemResultCode.DataBlockNumberInvalid, c.Accept(a, new(0xc1, true, 2, [])).Error);
         c.Begin(a);
         c.Accept(a, new(0xc1, false, 1, [1]));
-        Assert.Equal(CosemError.DataBlockNumberInvalid, c.Accept(a, new(0xc1, false, 1, [1])).Error);
+        Assert.Equal(CosemResultCode.DataBlockNumberInvalid, c.Accept(a, new(0xc1, false, 1, [1])).Error);
         c.Begin(a);
-        Assert.Equal(CosemError.LongGetAborted, c.Accept(a, new(0xc1, true, 1, [1, 2, 3, 4, 5, 6, 7, 8, 9])).Error);
+        Assert.Equal(CosemResultCode.LongGetAborted, c.Accept(a, new(0xc1, true, 1, [1, 2, 3, 4, 5, 6, 7, 8, 9])).Error);
         c.Begin(a);
-        Assert.Equal(CosemError.ObjectUnavailable, c.Accept(a, new(0xc1, true, 1, [], CosemError.ObjectUnavailable)).Error);
+        Assert.Equal(CosemResultCode.ObjectUnavailable, c.Accept(a, new(0xc1, true, 1, [], CosemResultCode.ObjectUnavailable)).Error);
         c.Begin(a);
         c.Accept(a, new(0xc1, false, 1, []));
         c.Accept(a, new(0xc1, false, 2, []));
-        Assert.Equal(CosemError.LongGetAborted, c.Accept(a, new(0xc1, true, 3, [])).Error);
+        Assert.Equal(CosemResultCode.LongGetAborted, c.Accept(a, new(0xc1, true, 3, [])).Error);
         c.Begin(a);
         c.Abort(a);
-        Assert.Equal(CosemError.NoLongGetInProgress, c.Accept(a, new(0xc1, true, 1, [])).Error);
+        Assert.Equal(CosemResultCode.NoLongGetInProgress, c.Accept(a, new(0xc1, true, 1, [])).Error);
     }
 }

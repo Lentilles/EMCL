@@ -1,6 +1,5 @@
 using System.Buffers;
 using EMCL.Core.Codecs;
-using EMCL.Framing;
 using EMCL.Framing.Hdlc.Frames;
 using EMCL.Framing.Hdlc.Llc;
 using EMCL.Protocol.Acse;
@@ -24,7 +23,7 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
     private const int DiagnosticPrefixLength = 16;
     private static readonly TimeSpan DisconnectTimeout = TimeSpan.FromSeconds(2);
     private readonly IByteTransport transport;
-    private readonly HdlcCodec codec = new();
+    private readonly HdlcCodec codec;
     private readonly HdlcAddress local;
     private readonly HdlcAddress remote;
     private readonly Action<HdlcFrame, bool>? frameObserver;
@@ -43,12 +42,16 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
     private byte nextSendSequence;
 
     private HdlcApduChannel(IByteTransport transport, HdlcAddress local, HdlcAddress remote,
-        Action<HdlcFrame, bool>? frameObserver)
+        Action<HdlcFrame, bool>? frameObserver, bool allowMissingClosingFlag)
     {
         this.transport = transport;
         this.local = local;
         this.remote = remote;
         this.frameObserver = frameObserver;
+        codec = new()
+        {
+            AllowMissingClosingFlag = allowMissingClosingFlag
+        };
     }
 
     /// <summary>Establishes an HDLC link and returns a channel that owns the supplied transport.</summary>
@@ -59,9 +62,28 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
     /// <param name="limits">Resource bounds for assembled APDUs.</param>
     /// <param name="frameObserver">Optional callback called for transmitted (false) and received (true) frames.</param>
     /// <param name="cancellationToken">Cancels link setup.</param>
-    public static async Task<HdlcApduChannel> ConnectAsync(IByteTransport transport, HdlcAddress local,
+    public static Task<HdlcApduChannel> ConnectAsync(IByteTransport transport, HdlcAddress local,
         HdlcAddress remote, TimeSpan timeout, ProtocolLimits? limits = null,
-        Action<HdlcFrame, bool>? frameObserver = null, CancellationToken cancellationToken = default)
+        Action<HdlcFrame, bool>? frameObserver = null, CancellationToken cancellationToken = default) =>
+        ConnectCoreAsync(transport, local, remote, timeout, limits, frameObserver,
+            allowMissingClosingFlag: false, cancellationToken);
+
+    /// <summary>Establishes an HDLC link with the supplied framing settings and takes ownership of the transport.</summary>
+    /// <param name="transport">An already open byte transport.</param>
+    /// <param name="framing">The addresses, setup timeout, and receive compatibility settings.</param>
+    /// <param name="limits">Resource bounds for assembled APDUs.</param>
+    /// <param name="cancellationToken">Cancels link setup.</param>
+    public static Task<HdlcApduChannel> ConnectAsync(IByteTransport transport, ApduFraming.Hdlc framing,
+        ProtocolLimits? limits = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(framing);
+        return ConnectCoreAsync(transport, framing.Local, framing.Remote, framing.LinkTimeout, limits,
+            framing.FrameObserver, framing.AllowMissingClosingFlag, cancellationToken);
+    }
+
+    private static async Task<HdlcApduChannel> ConnectCoreAsync(IByteTransport transport, HdlcAddress local,
+        HdlcAddress remote, TimeSpan timeout, ProtocolLimits? limits, Action<HdlcFrame, bool>? frameObserver,
+        bool allowMissingClosingFlag, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(transport);
         if (timeout <= TimeSpan.Zero)
@@ -69,7 +91,7 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
             throw new ArgumentOutOfRangeException(nameof(timeout));
         }
 
-        var channel = new HdlcApduChannel(transport, local, remote, frameObserver);
+        var channel = new HdlcApduChannel(transport, local, remote, frameObserver, allowMissingClosingFlag);
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -104,19 +126,12 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
         var dataAdapter = adapter ?? throw new InvalidOperationException("The HDLC link is not established.");
         while (true)
         {
-            var frame = await ReadFrameAsync(cancellationToken);
+            var frame = await ReadFrameAsync(cancellationToken).ConfigureAwait(false);
             ValidateAddresses(frame);
             if (frame.Control == HdlcControl.Ua)
             {
-                if (await TryAcceptSetupUaAsync(frame, cancellationToken))
-                {
-                    continue;
-                }
-
-                string state = awaitingFirstDataResponse
-                    ? "while awaiting the first data response after SNRM/UA"
-                    : "after another frame was received during data exchange";
-                FailLink($"Unexpected HDLC UA {state}");
+                await HandleDuplicateUaAsync(frame, cancellationToken).ConfigureAwait(false);
+                continue;
             }
 
             awaitingFirstDataResponse = false;
@@ -127,20 +142,7 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
 
             if (frame.IsInformation)
             {
-                if (frame.SendSequence != nextReceiveSequence || frame.ReceiveSequence != nextSendSequence)
-                {
-                    throw new InvalidDataException("Unexpected HDLC I-frame sequence or acknowledgement.");
-                }
-
-                nextReceiveSequence = (byte)((nextReceiveSequence + 1) & HdlcFrameFormat.SequenceMask);
-                var apdu = dataAdapter.Accept(frame with { Source = remote });
-                if (frame.Segmented)
-                {
-                    await WriteFrameAsync(new(remote, local,
-                        HdlcControl.CreateReceiveReady(nextReceiveSequence), []), cancellationToken);
-                }
-
-                if (apdu.HasValue)
+                if (await AcceptInformationFrameAsync(dataAdapter, frame, cancellationToken).ConfigureAwait(false) is { } apdu)
                 {
                     return apdu;
                 }
@@ -150,25 +152,65 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
 
             if (frame.IsUnnumberedInformation)
             {
-                return dataAdapter.Accept(frame with { Source = remote });
+                return dataAdapter.Accept(frame with
+                {
+                    Source = remote
+                });
             }
 
-            switch (frame.Control & HdlcControl.SupervisoryTypeMask)
-            {
-                case HdlcControl.ReceiveReady:
-                    if (frame.ReceiveSequence != nextSendSequence)
-                    {
-                        throw new InvalidDataException("Unexpected HDLC RR acknowledgement.");
-                    }
+            ValidateSupervisoryFrame(frame);
+        }
+    }
 
-                    continue;
-                case HdlcControl.ReceiveNotReady:
-                    throw new IOException("The meter reported HDLC receive-not-ready (RNR).");
-                case HdlcControl.Reject:
-                    throw new IOException("The meter rejected an HDLC information frame (REJ).");
-                default:
-                    throw new InvalidDataException($"Unexpected HDLC control {frame.Control:X2}.");
-            }
+    private async Task HandleDuplicateUaAsync(HdlcFrame frame, CancellationToken cancellationToken)
+    {
+        if (await TryAcceptSetupUaAsync(frame, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        string state = awaitingFirstDataResponse
+            ? "while awaiting the first data response after SNRM/UA"
+            : "after another frame was received during data exchange";
+        FailLink($"Unexpected HDLC UA {state}");
+    }
+
+    private async ValueTask<ReadOnlyMemory<byte>?> AcceptInformationFrameAsync(HdlcApduAdapter dataAdapter,
+        HdlcFrame frame, CancellationToken cancellationToken)
+    {
+        if (frame.SendSequence != nextReceiveSequence || frame.ReceiveSequence != nextSendSequence)
+        {
+            throw new InvalidDataException("Unexpected HDLC I-frame sequence or acknowledgement.");
+        }
+
+        nextReceiveSequence = (byte)((nextReceiveSequence + 1) & HdlcFrameFormat.SequenceMask);
+        var apdu = dataAdapter.Accept(frame with
+        {
+            Source = remote
+        });
+        if (frame.Segmented)
+        {
+            await WriteFrameAsync(new(remote, local, HdlcControl.CreateReceiveReady(nextReceiveSequence), []),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return apdu;
+    }
+
+    private void ValidateSupervisoryFrame(HdlcFrame frame)
+    {
+        switch (frame.Control & HdlcControl.SupervisoryTypeMask)
+        {
+            case HdlcControl.ReceiveReady when frame.ReceiveSequence == nextSendSequence:
+                return;
+            case HdlcControl.ReceiveReady:
+                throw new InvalidDataException("Unexpected HDLC RR acknowledgement.");
+            case HdlcControl.ReceiveNotReady:
+                throw new IOException("The meter reported HDLC receive-not-ready (RNR).");
+            case HdlcControl.Reject:
+                throw new IOException("The meter rejected an HDLC information frame (REJ).");
+            default:
+                throw new InvalidDataException($"Unexpected HDLC control {frame.Control:X2}.");
         }
     }
 
@@ -333,26 +375,14 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
     {
         while (true)
         {
-            var result = codec.Decode(new ReadOnlySequence<byte>(input.AsMemory(0, inputCount)));
-            if (result.Status == DecodeStatus.Done)
+            if (TryDecodeBufferedFrame() is { } frame)
             {
-                var frame = result.Value!;
-                int consumed = checked((int)result.Consumed);
-                frameObserver?.Invoke(frame, true);
-                input.AsSpan(consumed, inputCount - consumed).CopyTo(input);
-                inputCount -= consumed;
                 return frame;
-            }
-
-            if (result.Status != DecodeStatus.NeedMoreData)
-            {
-                string prefix = Convert.ToHexString(input.AsSpan(0, Math.Min(inputCount, DiagnosticPrefixLength)));
-                throw new InvalidDataException($"HDLC frame decode {result.Status}: {result.Error}; prefix={prefix}.");
             }
 
             if (inputCount > 1 && input.AsSpan(0, inputCount).IndexOfAnyExcept(HdlcFrameFormat.Flag) < 0)
             {
-                input[0] = HdlcFrameFormat.Flag;
+                // Keep the opening flag when the buffer contains only repeated flags.
                 inputCount = 1;
             }
 
@@ -361,7 +391,7 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
                 throw new InvalidDataException("HDLC frame exceeds the supported length.");
             }
 
-            int received = await transport.ReadAsync(input.AsMemory(inputCount), cancellationToken);
+            int received = await transport.ReadAsync(input.AsMemory(inputCount), cancellationToken).ConfigureAwait(false);
             if (received == 0)
             {
                 throw new EndOfStreamException("The HDLC byte transport closed the connection.");
@@ -369,6 +399,28 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
 
             inputCount += received;
         }
+    }
+
+    private HdlcFrame? TryDecodeBufferedFrame()
+    {
+        var result = codec.Decode(new ReadOnlySequence<byte>(input.AsMemory(0, inputCount)));
+        if (result.Status == DecodeStatus.NeedMoreData)
+        {
+            return null;
+        }
+
+        if (result.Status != DecodeStatus.Done)
+        {
+            string prefix = Convert.ToHexString(input.AsSpan(0, Math.Min(inputCount, DiagnosticPrefixLength)));
+            throw new InvalidDataException($"HDLC frame decode {result.Status}: {result.Error}; prefix={prefix}.");
+        }
+
+        var frame = result.Value!;
+        int consumed = checked((int)result.Consumed);
+        frameObserver?.Invoke(frame, true);
+        input.AsSpan(consumed, inputCount - consumed).CopyTo(input);
+        inputCount -= consumed;
+        return frame;
     }
 
     private async Task WriteFrameAsync(HdlcFrame frame, CancellationToken cancellationToken)

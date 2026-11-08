@@ -21,7 +21,7 @@ public sealed class RegisterHandler(Func<CosemObject, DlmsValue>? resetValue = n
 
         if (operation.Value?.Type != DlmsType.Int8 || operation.Value.AsInt64() != 0)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.TypeUnmatched));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.TypeUnmatched));
         }
 
         DlmsValue value;
@@ -35,7 +35,7 @@ public sealed class RegisterHandler(Func<CosemObject, DlmsValue>? resetValue = n
         }
         else
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.ObjectUnavailable, Diagnostic: "Provide a reset value for a nonnumeric or uninitialized register."));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.ObjectUnavailable, Diagnostic: "Provide a reset value for a nonnumeric or uninitialized register."));
         }
 
         cosemObject.State.Set(RegisterMembers.Attributes.Value, value);

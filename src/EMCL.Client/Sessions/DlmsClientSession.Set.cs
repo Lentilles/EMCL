@@ -18,7 +18,7 @@ public sealed partial class DlmsClientSession
     private async ValueTask<LnResponse> ExecuteSetAsync(CosemOperation operation, PendingOperation pending,
         ExchangeDeadline deadline, Action onAttempt)
     {
-        // Encode the value independently: the complete normal APDU may exceed even the local message limit.
+        // Encode the value separately because the complete normal APDU may exceed the local message limit.
         byte[] data = new AxdrCodec(options.Limits).EncodeBytes(operation.Value!);
         int normalHeader;
         lock (codecGate)
@@ -41,25 +41,25 @@ public sealed partial class DlmsClientSession
             throw new NotSupportedException("The SET APDU exceeds the peer or local PDU limit and SET block transfer was not negotiated.");
         }
 
+        return await ExecuteSetBlocksAsync(operation, pending, data, limit, deadline, onAttempt).ConfigureAwait(false);
+    }
+
+    private async ValueTask<LnResponse> ExecuteSetBlocksAsync(CosemOperation operation, PendingOperation pending,
+        byte[] data, int limit, ExchangeDeadline deadline, Action onAttempt)
+    {
         var first = new SetFirstBlockRequest(pending.Invoke, operation with
         {
             Value = null
         }, false, InitialSetBlockNumber, []);
-        int firstCapacity;
-        int nextCapacity;
-        lock (codecGate)
-        {
-            firstCapacity = SetPayloadCapacity(limit, codec.EncodeBytes(first).Length);
-            nextCapacity = SetPayloadCapacity(limit, codec.EncodeBytes(new SetBlockRequest(pending.Invoke, false, InitialSetBlockNumber, [])).Length);
-        }
-
+        var (firstCapacity, nextCapacity) = GetSetBlockCapacities(first, limit);
         if (firstCapacity <= 0 || nextCapacity <= 0)
         {
             throw new ArgumentException("The PDU limit cannot hold the SET block headers and a data octet.", nameof(operation));
         }
 
-        long count = 1 + ((long)Math.Max(0, data.Length - firstCapacity) + nextCapacity - 1) / nextCapacity;
-        if (count > options.Limits.MaxBlockCount || count > uint.MaxValue)
+        int remainingBytes = Math.Max(0, data.Length - firstCapacity);
+        long blockCount = 1 + ((long)remainingBytes + nextCapacity - 1) / nextCapacity;
+        if (blockCount > options.Limits.MaxBlockCount)
         {
             throw new ArgumentException("The SET transfer exceeds the configured block count limit.", nameof(operation));
         }
@@ -97,6 +97,16 @@ public sealed partial class DlmsClientSession
             }
 
             offset += size;
+        }
+    }
+
+    private (int First, int Next) GetSetBlockCapacities(SetFirstBlockRequest first, int limit)
+    {
+        var next = new SetBlockRequest(first.InvokeIdAndPriority, false, InitialSetBlockNumber, []);
+        lock (codecGate)
+        {
+            return (SetPayloadCapacity(limit, codec.EncodeBytes(first).Length),
+                SetPayloadCapacity(limit, codec.EncodeBytes(next).Length));
         }
     }
 

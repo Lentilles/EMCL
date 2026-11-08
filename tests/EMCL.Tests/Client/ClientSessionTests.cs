@@ -120,18 +120,18 @@ public sealed class ClientSessionTests
         await peer.AssociateAsync(client);
         var reading = SessionPeer.GetAsync(client, TestContext.Current.CancellationToken).AsTask();
         var request = await peer.ReadAsync<LnRequest>();
-        await peer.SendAsync(new LnResponse(CosemOperationKind.Read, request.InvokeIdAndPriority, new(CosemError.ReadWriteDenied)));
+        await peer.SendAsync(new LnResponse(CosemOperationKind.Read, request.InvokeIdAndPriority, new(CosemResultCode.ReadWriteDenied)));
         var denied = await Assert.ThrowsAsync<DlmsOperationException>(async () => await reading);
-        Assert.Equal(CosemError.ReadWriteDenied, denied.Error);
+        Assert.Equal(CosemResultCode.ReadWriteDenied, denied.Error);
         Assert.Equal(ClientSessionState.Associated, client.State);
         var action = client.ActionAsync(CosemClassIds.Register, SessionPeer.RegisterName, RegisterMembers.Methods.Reset,
             Number(DlmsType.Int8, 0), TestContext.Current.CancellationToken).AsTask();
         request = await peer.ReadAsync<LnRequest>();
         await peer.SendAsync(new LnResponse(CosemOperationKind.Invoke, request.InvokeIdAndPriority,
-            OperationResult.Ok(), CosemError.ObjectUnavailable));
+            OperationResult.Ok(), CosemResultCode.ObjectUnavailable));
         var failedReturn = await Assert.ThrowsAsync<DlmsOperationException>(async () => await action);
-        Assert.Equal(CosemError.Success, failedReturn.Response.Result.Error);
-        Assert.Equal(CosemError.ObjectUnavailable, failedReturn.Error);
+        Assert.Equal(CosemResultCode.Success, failedReturn.Response.Result.Error);
+        Assert.Equal(CosemResultCode.ObjectUnavailable, failedReturn.Error);
         await peer.ReleaseAsync(client);
     }
 

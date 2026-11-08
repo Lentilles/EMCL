@@ -46,15 +46,15 @@ public sealed class RegisterObjectsTests
         var buffer = device.Add(7, 1, LogicalName.Parse("1.0.99.1.0.255"));
         var extendedHandler = Assert.IsType<ExtendedRegisterHandler>(device.Handlers.Resolve("meter", extended));
         var demandHandler = Assert.IsType<DemandRegisterHandler>(device.Handlers.Resolve("meter", demand));
-        Assert.Equal(CosemError.Success, (await extendedHandler.CaptureAsync(extended, Number(DlmsType.UInt32, 123),
+        Assert.Equal(CosemResultCode.Success, (await extendedHandler.CaptureAsync(extended, Number(DlmsType.UInt32, 123),
             cancellationToken: TestContext.Current.CancellationToken)).Error);
         await WriteValueAsync(device, demand, 8, Number(DlmsType.UInt32, 60));
-        Assert.Equal(CosemError.Success, (await demandHandler.RecordSampleAsync(demand, Number(DlmsType.UInt32, 10),
+        Assert.Equal(CosemResultCode.Success, (await demandHandler.RecordSampleAsync(demand, Number(DlmsType.UInt32, 10),
             TestContext.Current.CancellationToken)).Error);
         await WriteValueAsync(device, buffer, 3, DlmsValue.Array(CaptureDefinition(extended), CaptureDefinition(extended, 5),
             CaptureDefinition(demand), CaptureDefinition(demand, 7)));
         await WriteValueAsync(device, buffer, 8, Number(DlmsType.UInt32, 2));
-        Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(device, buffer, CosemOperationKind.Invoke,
+        Assert.Equal(CosemResultCode.Success, (await ExecuteOperationAsync(device, buffer, CosemOperationKind.Invoke,
             2, Number(DlmsType.Int8, 0))).Error);
         var row = Assert.Single(ReadStoredValue(buffer, 2).Items).Items;
         Assert.Equal(123L, row[0].AsInt64());

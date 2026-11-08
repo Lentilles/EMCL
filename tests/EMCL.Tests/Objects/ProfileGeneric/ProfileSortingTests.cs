@@ -34,7 +34,7 @@ public sealed class ProfileSortingTests
         {
             register.State.Set(2, Number(DlmsType.Int32, value));
             var result = await ExecuteOperationAsync(device, profile, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0));
-            Assert.Equal(CosemError.Success, result.Error);
+            Assert.Equal(CosemResultCode.Success, result.Error);
         }
 
         long[] actual = ReadStoredValue(profile, 2).Items.Select(row => row.Items[0].AsInt64()).ToArray();
@@ -49,10 +49,10 @@ public sealed class ProfileSortingTests
         register.State.Set(2, Number(DlmsType.Int32, 42));
         var inner = device.Add(7, 1, LogicalName.Parse("1.0.99.1.0.255"));
         await WriteValueAsync(device, inner, 3, DlmsValue.Array(CaptureDefinition(register)));
-        Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(device, inner, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0))).Error);
+        Assert.Equal(CosemResultCode.Success, (await ExecuteOperationAsync(device, inner, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0))).Error);
         var outer = device.Add(7, 1, LogicalName.Parse("1.0.99.2.0.255"));
         await WriteValueAsync(device, outer, 3, DlmsValue.Array(CaptureDefinition(inner)));
-        Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(device, outer, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0))).Error);
+        Assert.Equal(CosemResultCode.Success, (await ExecuteOperationAsync(device, outer, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0))).Error);
         Assert.Single(ReadStoredValue(outer, 2).Items);
         await WriteValueAsync(device, inner, 3, DlmsValue.Array(CaptureDefinition(register)));
         Assert.Empty(ReadStoredValue(outer, 2).Items);

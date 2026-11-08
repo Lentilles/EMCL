@@ -69,7 +69,7 @@ public sealed class ExtensibilityTests
         };
         var vd = vb.Build("v");
         vd.Add(1, 0, o.LogicalName);
-        Assert.Equal(CosemError.TypeUnmatched, (await vd.Pipeline.ExecuteAsync(op, vd.LocalContext, cancellationToken: TestContext.Current.CancellationToken)).Error);
+        Assert.Equal(CosemResultCode.TypeUnmatched, (await vd.Pipeline.ExecuteAsync(op, vd.LocalContext, cancellationToken: TestContext.Current.CancellationToken)).Error);
         d.Pipeline = new CustomPipeline();
         Assert.Equal(77L, (await d.Pipeline.ExecuteAsync(op, d.LocalContext, cancellationToken: TestContext.Current.CancellationToken)).Value!.AsInt64());
         await using var channel = new CustomChannel();

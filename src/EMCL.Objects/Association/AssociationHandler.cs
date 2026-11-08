@@ -34,14 +34,14 @@ public sealed class AssociationHandler(ObjectCatalog catalog, AssociationImporte
     }
 
     /// <inheritdoc />
-    public override ValueTask<OperationResult> WriteAsync(CosemObject cosemObject, CosemOperation operation, OperationContext context, CancellationToken cancellationToken) => operation.Index is AssociationLnMembers.Attributes.ObjectList or AssociationLnMembers.Attributes.Secret ? ValueTask.FromResult(new OperationResult(CosemError.ReadWriteDenied)) : base.WriteAsync(cosemObject, operation, context, cancellationToken);
+    public override ValueTask<OperationResult> WriteAsync(CosemObject cosemObject, CosemOperation operation, OperationContext context, CancellationToken cancellationToken) => operation.Index is AssociationLnMembers.Attributes.ObjectList or AssociationLnMembers.Attributes.Secret ? ValueTask.FromResult(new OperationResult(CosemResultCode.ReadWriteDenied)) : base.WriteAsync(cosemObject, operation, context, cancellationToken);
     /// <inheritdoc />
     public override ValueTask<OperationResult> InvokeAsync(CosemObject cosemObject, CosemOperation operation, OperationContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (operation.Index is AssociationLnMembers.Methods.ReplyToHlsAuthentication or AssociationLnMembers.Methods.ChangeHlsSecret)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.ReadWriteDenied, Diagnostic: "HLS requires an external security handler."));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.ReadWriteDenied, Diagnostic: "HLS requires an external security handler."));
         }
 
         if (operation.Index is AssociationLnMembers.Methods.AddObject or AssociationLnMembers.Methods.RemoveObject)
@@ -53,7 +53,7 @@ public sealed class AssociationHandler(ObjectCatalog catalog, AssociationImporte
             {
                 if (existing != null && existing.Descriptor.Key != parsed.Descriptor.Key)
                 {
-                    return ValueTask.FromResult(new OperationResult(CosemError.ObjectClassInconsistent));
+                    return ValueTask.FromResult(new OperationResult(CosemResultCode.ObjectClassInconsistent));
                 }
 
                 if (existing == null)
@@ -70,7 +70,7 @@ public sealed class AssociationHandler(ObjectCatalog catalog, AssociationImporte
             {
                 if (existing == null || existing.Descriptor.Key != parsed.Descriptor.Key || !associationContext.Rights.ContainsKey(parsed.Name))
                 {
-                    return ValueTask.FromResult(new OperationResult(CosemError.ObjectUndefined));
+                    return ValueTask.FromResult(new OperationResult(CosemResultCode.ObjectUndefined));
                 }
 
                 // Removing visibility from one association does not delete a shared device object.

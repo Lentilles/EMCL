@@ -37,42 +37,53 @@ public static class HdlcNegotiation
         var seen = new HashSet<byte>();
         for (int offset = HeaderLength; offset < data.Length;)
         {
-            if (data.Length - offset < 2)
+            var (identifier, length, value) = ReadParameter(data, ref offset, seen);
+            ValidateParameter(identifier, length, value);
+            if (identifier == MaximumReceiveInformation)
             {
-                throw new InvalidDataException("Truncated HDLC UA parameter.");
-            }
-
-            byte identifier = data[offset++];
-            int length = data[offset++];
-            if (length is 0 or > sizeof(uint) || length > data.Length - offset || !seen.Add(identifier))
-            {
-                throw new InvalidDataException("Invalid or repeated HDLC UA parameter.");
-            }
-
-            uint value = 0;
-            for (int i = 0; i < length; i++)
-            {
-                value = value << 8 | data[offset++];
-            }
-
-            switch (identifier)
-            {
-                case MaximumTransmitInformation or MaximumReceiveInformation when length is 1 or 2
-                    && value is > 0 and <= MaximumInformationLength:
-                    if (identifier == MaximumReceiveInformation)
-                    {
-                        maximumReceive = (int)value;
-                    }
-
-                    break;
-                case TransmitWindow or ReceiveWindow when length == sizeof(uint)
-                    && value is > 0 and <= MaximumWindow:
-                    break;
-                default:
-                    throw new InvalidDataException("Unsupported HDLC UA parameter.");
+                maximumReceive = (int)value;
             }
         }
 
         return Math.Min(maximumReceive, HdlcFrameFormat.DefaultInformationLength);
+    }
+
+    private static (byte Identifier, int Length, uint Value) ReadParameter(ReadOnlySpan<byte> data, ref int offset,
+        HashSet<byte> seen)
+    {
+        if (data.Length - offset < 2)
+        {
+            throw new InvalidDataException("Truncated HDLC UA parameter.");
+        }
+
+        byte identifier = data[offset++];
+        int length = data[offset++];
+        if (length is 0 or > sizeof(uint) || length > data.Length - offset || !seen.Add(identifier))
+        {
+            throw new InvalidDataException("Invalid or repeated HDLC UA parameter.");
+        }
+
+        uint value = 0;
+        for (int i = 0; i < length; i++)
+        {
+            value = value << 8 | data[offset++];
+        }
+
+        return (identifier, length, value);
+    }
+
+    private static void ValidateParameter(byte identifier, int length, uint value)
+    {
+        bool supported = identifier switch
+        {
+            MaximumTransmitInformation or MaximumReceiveInformation => length is 1 or 2
+                && value is > 0 and <= MaximumInformationLength,
+            TransmitWindow or ReceiveWindow => length == sizeof(uint) && value is > 0 and <= MaximumWindow,
+            _ => false
+        };
+        if (!supported)
+        {
+            throw new InvalidDataException("Unsupported HDLC UA parameter.");
+        }
     }
 }

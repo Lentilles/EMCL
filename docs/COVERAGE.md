@@ -22,7 +22,7 @@
 | ACSE | AARQ/AARE/RLRQ/RLRE, definite-length BER, preservation of fields including authentication fields |
 | xDLMS negotiation | InitiateRequest/InitiateResponse and conformance bit-string |
 | BER indefinite length / high-tag-number fields | Not supported; returns an error or Unsupported |
-| HDLC | Type 3, 1/2/4-octet addresses, control byte, HCS/FCS, shared flags, and I-frame segmentation |
+| HDLC | Type 3, 1/2/4-octet addresses, control byte, HCS/FCS, shared flags, I-frame segmentation, and opt-in reception without a closing flag |
 | LLC | Command/response header and broadcast destination |
 | Wrapper | Version 1, wPorts, 16-bit length |
 | Stream | Adapter and fragmented I/O, leaveOpen, cancellation |
@@ -36,6 +36,7 @@
 | Client SET block transfer | Automatic first/subsequent data blocks; negotiated support, complete PDU bounds, sequential acknowledgements, and a final data-access result |
 | Console export | Wrapper/TCP and HDLC/TCP gateway (SNRM/UA, I/RR without retries), separate JSON configuration, None/LLS/HLS High, OBIS/classes/members/v1/v3 rights in JSON; atomic saving |
 | Client catalog loading | Reading object_list, including GET blocks, and atomic import with an explicit Association LN version |
+| Client Profile Generic reading | Streaming array and compact-array buffer rows from normal and block GET responses, with selective access and progress |
 | Client notifications | Separate bounded stream of negotiated DataNotification messages; overflow terminates the session |
 | Deadlines and cancellation | Cover the entire exchange; cancellation after a send attempt faults the association, while queue waiting is canceled separately |
 | Ready-to-use server session, full HDLC link management/ARQ, retry | Future work; the example performs only SNRM/UA and RR |

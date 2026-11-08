@@ -1,7 +1,7 @@
 namespace EMCL.Core.Operations;
 
-/// <summary>Defines data-access result codes used by local object operations and LN protocol responses.</summary>
-public enum CosemError : byte
+/// <summary>Defines the success and failure codes used by COSEM object operations and LN protocol responses.</summary>
+public enum CosemResultCode : byte
 {
     /// <summary>The operation completed successfully.</summary>
     Success = 0,

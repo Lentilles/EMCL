@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
-using System.Threading.Channels;
+using EMCL.Client.Internal;
 using EMCL.Core.Codecs;
 using EMCL.Core.Values;
 using EMCL.Objects.Association;
@@ -14,24 +13,19 @@ namespace EMCL.Client.Sessions;
 /// Dispose the stream when enumeration is stopped early. An incomplete GET faults the owning session.</remarks>
 public sealed class AssociationObjectStream : IAsyncEnumerable<AssociationObjectEntry>, IAsyncDisposable
 {
-    private readonly ChannelReader<byte[]> chunks;
-    private readonly Task producer;
-    private readonly CancellationTokenSource source;
+    private readonly GetDataStream data;
     private readonly AssociationImporter importer;
     private readonly byte associationVersion;
     private readonly ProtocolLimits limits;
     private readonly AxdrCodec codec;
-    private readonly List<byte> pending = [];
     private int enumerationStarted;
     private int disposed;
     private int currentCount;
 
-    internal AssociationObjectStream(ChannelReader<byte[]> chunks, Task producer, CancellationTokenSource source,
-        AssociationImporter importer, byte associationVersion, ProtocolLimits limits)
+    internal AssociationObjectStream(GetDataStream data, AssociationImporter importer, byte associationVersion,
+        ProtocolLimits limits)
     {
-        this.chunks = chunks;
-        this.producer = producer;
-        this.source = source;
+        this.data = data;
         this.importer = importer;
         this.associationVersion = associationVersion;
         this.limits = limits;
@@ -48,7 +42,7 @@ public sealed class AssociationObjectStream : IAsyncEnumerable<AssociationObject
     {
         while (!TryReadHeader())
         {
-            if (!await ReadMoreAsync(cancellationToken).ConfigureAwait(false))
+            if (!await data.ReadMoreAsync(cancellationToken).ConfigureAwait(false))
             {
                 throw new AssociationImportException("Incomplete object_list array header.");
             }
@@ -79,24 +73,14 @@ public sealed class AssociationObjectStream : IAsyncEnumerable<AssociationObject
                 yield return entry;
             }
 
-            // The declared count is insufficient if the transfer contains trailing data.
-            if (pending.Count != 0)
+            do
             {
-                throw new AssociationImportException("Trailing data after object_list entries.");
-            }
-
-            while (await ReadMoreAsync(cancellationToken).ConfigureAwait(false))
-            {
-                if (pending.Count != 0)
+                if (!data.Buffered.IsEmpty)
                 {
                     throw new AssociationImportException("Trailing data after object_list entries.");
                 }
             }
-
-            if (pending.Count != 0)
-            {
-                throw new AssociationImportException("Trailing data after object_list entries.");
-            }
+            while (await data.ReadMoreAsync(cancellationToken).ConfigureAwait(false));
         }
         finally
         {
@@ -105,56 +89,64 @@ public sealed class AssociationObjectStream : IAsyncEnumerable<AssociationObject
     }
 
     /// <inheritdoc />
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref disposed, 1) != 0)
-        {
-            return;
-        }
-
-        await source.CancelAsync().ConfigureAwait(false);
-        await producer.ConfigureAwait(false);
-        source.Dispose();
+        Volatile.Write(ref disposed, 1);
+        return data.DisposeAsync();
     }
 
     private async ValueTask<AssociationObjectEntry> ReadEntryAsync(CancellationToken cancellationToken)
     {
         while (true)
         {
-            if (pending.Count != 0)
+            if (TryReadBufferedEntry() is { } entry)
             {
-                var decoded = codec.Decode(new ReadOnlySequence<byte>(pending.ToArray()));
-                if (decoded.Status == DecodeStatus.Done)
-                {
-                    try
-                    {
-                        var value = decoded.Value!;
-                        var parsed = importer.ParseEntry(value, associationVersion);
-                        pending.RemoveRange(0, checked((int)decoded.Consumed));
-                        return new(value, parsed.Descriptor, parsed.Name, parsed.Rights);
-                    }
-                    catch (Exception error) when (error is ArgumentException or FormatException or InvalidOperationException or OverflowException)
-                    {
-                        throw new AssociationImportException($"Invalid object_list entry: {error.Message}", error);
-                    }
-                }
-
-                if (decoded.Status != DecodeStatus.NeedMoreData)
-                {
-                    throw new AssociationImportException($"Invalid object_list entry: {decoded.Status}; {decoded.Error}.");
-                }
+                return entry;
             }
 
-            if (!await ReadMoreAsync(cancellationToken).ConfigureAwait(false))
+            if (!await data.ReadMoreAsync(cancellationToken).ConfigureAwait(false))
             {
                 throw new AssociationImportException("Incomplete object_list entry.");
             }
         }
     }
 
+    private AssociationObjectEntry? TryReadBufferedEntry()
+    {
+        var pending = data.Buffered;
+        if (pending.IsEmpty)
+        {
+            return null;
+        }
+
+        var decoded = codec.Decode(new ReadOnlySequence<byte>(pending.ToArray()));
+        if (decoded.Status == DecodeStatus.NeedMoreData)
+        {
+            return null;
+        }
+
+        if (decoded.Status != DecodeStatus.Done)
+        {
+            throw new AssociationImportException($"Invalid object_list entry: {decoded.Status}; {decoded.Error}.");
+        }
+
+        try
+        {
+            var value = decoded.Value!;
+            var parsed = importer.ParseEntry(value, associationVersion);
+            data.Advance(checked((int)decoded.Consumed));
+            return new(value, parsed.Descriptor, parsed.Name, parsed.Rights);
+        }
+        catch (Exception error) when (error is ArgumentException or FormatException or InvalidOperationException or OverflowException)
+        {
+            throw new AssociationImportException($"Invalid object_list entry: {error.Message}", error);
+        }
+    }
+
     private bool TryReadHeader()
     {
-        if (pending.Count == 0)
+        var pending = data.Buffered;
+        if (pending.IsEmpty)
         {
             return false;
         }
@@ -164,7 +156,7 @@ public sealed class AssociationObjectStream : IAsyncEnumerable<AssociationObject
             throw new AssociationImportException("object_list must be an A-XDR array.");
         }
 
-        if (pending.Count < 2)
+        if (pending.Length < 2)
         {
             return false;
         }
@@ -176,7 +168,7 @@ public sealed class AssociationObjectStream : IAsyncEnumerable<AssociationObject
             throw new AssociationImportException("Invalid object_list array length.");
         }
 
-        if (pending.Count < 2 + lengthBytes)
+        if (pending.Length < 2 + lengthBytes)
         {
             return false;
         }
@@ -193,31 +185,7 @@ public sealed class AssociationObjectStream : IAsyncEnumerable<AssociationObject
         }
 
         TotalCount = (int)count;
-        pending.RemoveRange(0, 2 + lengthBytes);
+        data.Advance(2 + lengthBytes);
         return true;
-    }
-
-    private async ValueTask<bool> ReadMoreAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var chunk = await chunks.ReadAsync(cancellationToken).ConfigureAwait(false);
-            if (chunk.Length > limits.MaxMessageBytes - pending.Count)
-            {
-                throw new AssociationImportException("object_list exceeds the message limit.");
-            }
-
-            pending.AddRange(chunk);
-            return true;
-        }
-        catch (ChannelClosedException error) when (error.InnerException != null)
-        {
-            ExceptionDispatchInfo.Capture(error.InnerException).Throw();
-            throw;
-        }
-        catch (ChannelClosedException)
-        {
-            return false;
-        }
     }
 }

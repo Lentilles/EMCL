@@ -15,6 +15,30 @@ namespace EMCL.Tests.Transport;
 public sealed class HdlcApduChannelTests
 {
     [Fact]
+    public async Task CompatibilityReceivesUaAndInformationWithoutClosingFlags()
+    {
+        byte[] response = [4, 0x7E, 5];
+        await RunLoopbackAsync(async (stream, codec, local, remote) =>
+        {
+            byte[] ua = codec.EncodeBytes(new(local, remote, HdlcControl.Ua, []));
+            await stream.WriteAsync(ua.AsMemory(0, ua.Length - 1), TestContext.Current.CancellationToken);
+
+            Assert.True((await ReadFrameAsync(stream, codec)).IsInformation);
+            var adapter = new HdlcApduAdapter(remote, local, response: true) { ReceiveSequence = 1 };
+            byte[] information = codec.EncodeBytes(adapter.Frame(response).Single());
+            await stream.WriteAsync(information.AsMemory(0, information.Length - 1), TestContext.Current.CancellationToken);
+
+            Assert.Equal(HdlcControl.Disc, (await ReadFrameAsync(stream, codec)).Control);
+        }, async channel =>
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+            deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            await channel.SendAsync(new byte[] { 1 }, deadline.Token);
+            Assert.Equal(response, (await channel.ReceiveAsync(deadline.Token))!.Value.ToArray());
+        }, allowMissingClosingFlag: true);
+    }
+
+    [Fact]
     public async Task UnansweredAarqIsRetransmittedWithSameHdlcSequenceAndAareIsPreserved()
     {
         await RunLoopbackAsync(async (stream, codec, local, remote) =>
@@ -395,7 +419,7 @@ public sealed class HdlcApduChannelTests
     private static async Task RunLoopbackAsync(
         Func<NetworkStream, HdlcCodec, HdlcAddress, HdlcAddress, Task> serve,
         Func<IApduChannel, Task> verify, Action<HdlcFrame, bool>? observer = null,
-        HdlcAddress? configuredRemote = null)
+        HdlcAddress? configuredRemote = null, bool allowMissingClosingFlag = false)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -404,7 +428,10 @@ public sealed class HdlcApduChannelTests
         var server = ServeAsync();
         var settings = new ApduChannelSettings(new TcpByteTransportFactory("127.0.0.1",
             ((IPEndPoint)listener.LocalEndpoint).Port, TimeSpan.FromSeconds(5)),
-            new ApduFraming.Hdlc(local, remote, TimeSpan.FromSeconds(5), observer));
+            new ApduFraming.Hdlc(local, remote, TimeSpan.FromSeconds(5), observer)
+            {
+                AllowMissingClosingFlag = allowMissingClosingFlag
+            });
         try
         {
             await using var channel = await ApduChannels.ConnectAsync(settings, TestContext.Current.CancellationToken);

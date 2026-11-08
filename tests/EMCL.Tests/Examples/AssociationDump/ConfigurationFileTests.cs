@@ -111,6 +111,22 @@ public sealed class ConfigurationFileTests
     }
 
     [Fact]
+    public async Task LoadsHdlcMissingClosingFlagCompatibility()
+    {
+        using var directory = new ExportTestDirectory();
+        var settings = ExportTestData.Configuration("unused.json");
+        var json = JsonSerializer.SerializeToNode(settings, JsonOptions)!;
+        json["channel"]!["framing"] = JsonNode.Parse("""
+            { "kind": "Hdlc", "allowMissingClosingFlag": true }
+            """);
+        string path = Path.Combine(directory.Path, "meter.json");
+        await File.WriteAllTextAsync(path, json.ToJsonString(), TestContext.Current.CancellationToken);
+
+        var loaded = await ConfigurationFile.LoadAsync(path, TestContext.Current.CancellationToken);
+        Assert.True(Assert.IsType<ApduFraming.Hdlc>(loaded.CreateChannelSettings().Framing).AllowMissingClosingFlag);
+    }
+
+    [Fact]
     public async Task UpgradesLegacyConnectionSettingsAndRejectsFieldsFromAnotherFraming()
     {
         using var directory = new ExportTestDirectory();

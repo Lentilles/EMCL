@@ -40,14 +40,14 @@ public sealed class RegisterDefinitionTests
             builder.Definitions.Register(DemandRegisterClassDefinition.Create(timeType));
             var device = builder.Build("meter");
             var register = device.Add(classId, 0, LogicalName.Parse("1.0.1.8.0.255"));
-            Assert.Equal(CosemError.TypeUnmatched, (await Write(scalerIndex,
+            Assert.Equal(CosemResultCode.TypeUnmatched, (await Write(scalerIndex,
                 DlmsValue.Structure(Number(DlmsType.UInt8, 0), Number(DlmsType.Enum, 30)))).Error);
-            Assert.Equal(CosemError.Success, (await Write(scalerIndex,
+            Assert.Equal(CosemResultCode.Success, (await Write(scalerIndex,
                 DlmsValue.Structure(Number(DlmsType.Int8, -3), Number(DlmsType.Enum, 30)))).Error);
-            Assert.Equal(CosemError.TypeUnmatched, (await Write(statusIndex, Number(DlmsType.Int32, 0))).Error);
-            Assert.Equal(CosemError.Success, (await Write(statusIndex, DlmsValue.Null)).Error);
-            Assert.Equal(CosemError.TypeUnmatched, (await Write(timeIndex, new(timeType, new byte[4]))).Error);
-            Assert.Equal(CosemError.Success, (await Write(timeIndex, new(timeType, new byte[12]))).Error);
+            Assert.Equal(CosemResultCode.TypeUnmatched, (await Write(statusIndex, Number(DlmsType.Int32, 0))).Error);
+            Assert.Equal(CosemResultCode.Success, (await Write(statusIndex, DlmsValue.Null)).Error);
+            Assert.Equal(CosemResultCode.TypeUnmatched, (await Write(timeIndex, new(timeType, new byte[4]))).Error);
+            Assert.Equal(CosemResultCode.Success, (await Write(timeIndex, new(timeType, new byte[12]))).Error);
 
             ValueTask<OperationResult> Write(sbyte index, DlmsValue value) => ExecuteOperationAsync(device, register,
                 CosemOperationKind.Write, index, value);

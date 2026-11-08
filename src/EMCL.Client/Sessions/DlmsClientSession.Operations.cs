@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Immutable;
 using System.Runtime.ExceptionServices;
 using EMCL.Client.Exceptions;
 using EMCL.Client.Internal;
@@ -24,7 +25,7 @@ public sealed partial class DlmsClientSession
         => ExecuteObservedAsync(operation, null, cancellationToken);
 
     private async ValueTask<LnResponse> ExecuteObservedAsync(CosemOperation operation,
-        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask>? onGetBlock, CancellationToken cancellationToken)
+        GetDataStream? stream, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operation);
         cancellationToken.ThrowIfCancellationRequested();
@@ -40,7 +41,7 @@ public sealed partial class DlmsClientSession
 
         try
         {
-            return await ExecuteCoreAsync(operation, onGetBlock, cancellationToken).ConfigureAwait(false);
+            return await ExecuteCoreAsync(operation, stream, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -55,7 +56,7 @@ public sealed partial class DlmsClientSession
     }
 
     private async ValueTask<LnResponse> ExecuteCoreAsync(CosemOperation operation,
-        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask>? onGetBlock, CancellationToken cancellationToken)
+        GetDataStream? stream, CancellationToken cancellationToken)
     {
         using var queued = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetimeToken);
         try
@@ -69,7 +70,6 @@ public sealed partial class DlmsClientSession
         }
 
         PendingOperation? pending = null;
-        bool attempted = false;
         try
         {
             lock (gate)
@@ -78,63 +78,54 @@ public sealed partial class DlmsClientSession
                 pending = RegisterOperation(operation.Kind);
             }
 
-            using var deadline = new ExchangeDeadline(options, cancellationToken, lifetimeToken);
-            try
-            {
-                if (operation.Kind == CosemOperationKind.Write)
-                {
-                    return await ExecuteSetAsync(operation, pending, deadline, () => attempted = true).ConfigureAwait(false);
-                }
-
-                await SendAsync(new LnRequest(pending.Invoke, operation), SendLimit(), deadline.Token,
-                    () => attempted = true).ConfigureAwait(false);
-                return await ReceiveOperationAsync(pending, onGetBlock, deadline.Token,
-                    deadline.ProcessingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                var error = UnconfirmedWrite(operation, attempted, deadline.TranslateCancellation(SessionFailure()));
-                if (attempted)
-                {
-                    Fault(error);
-                }
-
-                ExceptionDispatchInfo.Capture(error).Throw();
-                throw;
-            }
-            catch (Exception error)
-            {
-                var reported = UnconfirmedWrite(operation, attempted, error);
-                if (attempted)
-                {
-                    Fault(reported);
-                }
-
-                ExceptionDispatchInfo.Capture(reported).Throw();
-                throw;
-            }
+            return await ExecuteExchangeAsync(operation, pending, stream, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             if (pending != null)
             {
                 blocks.Abort(ExchangeKey(pending));
-                lock (gate)
-                {
-                    operations.Remove(pending.Id);
-                    if (--activeOperations == 0)
-                    {
-                        idle.TrySetResult();
-                    }
-                }
+                UnregisterOperation(pending);
             }
 
             slots.Release();
         }
     }
 
-    private static Exception UnconfirmedWrite(CosemOperation operation, bool attempted, Exception error) =>
-        operation.Kind == CosemOperationKind.Write && attempted ? new DlmsWriteUnconfirmedException(error) : error;
+    private async ValueTask<LnResponse> ExecuteExchangeAsync(CosemOperation operation, PendingOperation pending,
+        GetDataStream? stream, CancellationToken cancellationToken)
+    {
+        using var deadline = new ExchangeDeadline(options, cancellationToken, lifetimeToken);
+        bool attempted = false;
+        try
+        {
+            if (operation.Kind == CosemOperationKind.Write)
+            {
+                return await ExecuteSetAsync(operation, pending, deadline, () => attempted = true).ConfigureAwait(false);
+            }
+
+            await SendAsync(new LnRequest(pending.Invoke, operation), SendLimit(), deadline.Token,
+                () => attempted = true).ConfigureAwait(false);
+            return await ReceiveOperationAsync(pending, stream, deadline.Token, deadline.ProcessingToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            var reported = error is OperationCanceledException ? deadline.TranslateCancellation(SessionFailure()) : error;
+            if (attempted)
+            {
+                if (operation.Kind == CosemOperationKind.Write)
+                {
+                    reported = new DlmsWriteUnconfirmedException(reported);
+                }
+
+                Fault(reported);
+            }
+
+            ExceptionDispatchInfo.Capture(reported).Throw();
+            throw;
+        }
+    }
 
     /// <inheritdoc />
     public async ValueTask<DlmsValue> GetAsync(ushort classId, LogicalName logicalName, sbyte attribute,
@@ -209,14 +200,26 @@ public sealed partial class DlmsClientSession
         return pending;
     }
 
+    private void UnregisterOperation(PendingOperation pending)
+    {
+        lock (gate)
+        {
+            operations.Remove(pending.Id);
+            if (--activeOperations == 0)
+            {
+                idle.TrySetResult();
+            }
+        }
+    }
+
     private async ValueTask<LnResponse> ReceiveOperationAsync(PendingOperation pending,
-        Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask>? onGetBlock, CancellationToken cancellationToken,
+        GetDataStream? stream, CancellationToken cancellationToken,
         CancellationToken processingToken)
     {
         var response = await pending.ReceiveAsync(cancellationToken, processingToken).ConfigureAwait(false);
         if (response is LnResponse normal)
         {
-            if (normal.Kind == CosemOperationKind.Read && normal.Result.Error == CosemError.Success && normal.Result.Value == null)
+            if (normal.Kind == CosemOperationKind.Read && normal.Result.Error == CosemResultCode.Success && normal.Result.Value == null)
             {
                 throw new DlmsProtocolException("A successful GET response requires a Data value.");
             }
@@ -224,18 +227,26 @@ public sealed partial class DlmsClientSession
             return normal;
         }
 
+        return await ReceiveGetBlocksAsync(pending, (GetBlockResponse)response, stream, cancellationToken,
+            processingToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<LnResponse> ReceiveGetBlocksAsync(PendingOperation pending, GetBlockResponse block,
+        GetDataStream? stream, CancellationToken cancellationToken,
+        CancellationToken processingToken)
+    {
         if ((negotiated!.Conformance & DlmsConformance.BlockTransferWithGet) == DlmsConformance.None)
         {
             throw new DlmsProtocolException("The peer used GET block transfer without negotiation.");
         }
 
         var key = ExchangeKey(pending);
-        blocks.Begin(key);
+        bool assemble = stream?.AssembleBlocks ?? true;
+        blocks.Begin(key, assemble);
         while (true)
         {
-            var block = (GetBlockResponse)response;
             var assembled = blocks.Accept(key, block);
-            if (assembled.Error != CosemError.Success)
+            if (assembled.Error != CosemResultCode.Success)
             {
                 if (block.Error.HasValue && block.Error.Value == assembled.Error)
                 {
@@ -245,21 +256,16 @@ public sealed partial class DlmsClientSession
                 throw new DlmsProtocolException($"The GET block sequence or resource bound is invalid: {assembled.Error}.");
             }
 
-            if (onGetBlock != null)
+            if (stream != null)
             {
-                await onGetBlock(block.Data.ToArray(), assembled.Complete ? processingToken : cancellationToken)
+                await stream.WriteBlockAsync(block.Data, assembled.Complete ? processingToken : cancellationToken)
                     .ConfigureAwait(false);
             }
 
             if (assembled.Complete)
             {
-                var value = new AxdrCodec(options.Limits).Decode(new ReadOnlySequence<byte>(assembled.Data.ToArray()));
-                if (value.Status != DecodeStatus.Done || value.Consumed != assembled.Data.Length)
-                {
-                    throw new DlmsProtocolException("The completed GET blocks do not contain exactly one A-XDR Data value.");
-                }
-
-                return new(CosemOperationKind.Read, pending.Invoke, OperationResult.Ok(value.Value));
+                var value = assemble ? DecodeGetBlockValue(assembled.Data) : null;
+                return new(CosemOperationKind.Read, pending.Invoke, OperationResult.Ok(value));
             }
 
             lock (gate)
@@ -269,8 +275,19 @@ public sealed partial class DlmsClientSession
 
             // GET-next acknowledges the last received block, rather than naming the next block number.
             await SendAsync(new GetNextRequest(pending.Invoke, block.BlockNumber), SendLimit(), cancellationToken).ConfigureAwait(false);
-            response = await pending.ReceiveAsync(cancellationToken, processingToken).ConfigureAwait(false);
+            block = (GetBlockResponse)await pending.ReceiveAsync(cancellationToken, processingToken).ConfigureAwait(false);
         }
+    }
+
+    private DlmsValue DecodeGetBlockValue(ImmutableArray<byte> data)
+    {
+        var decoded = new AxdrCodec(options.Limits).Decode(new ReadOnlySequence<byte>(data.ToArray()));
+        if (decoded.Status != DecodeStatus.Done || decoded.Consumed != data.Length)
+        {
+            throw new DlmsProtocolException("The completed GET blocks do not contain exactly one A-XDR Data value.");
+        }
+
+        return decoded.Value!;
     }
 
     private GetExchangeKey ExchangeKey(PendingOperation pending) => new(exchangeScope, exchangeScope, exchangeScope, pending.Id);
@@ -303,7 +320,7 @@ public sealed partial class DlmsClientSession
 
     private static void ThrowRemoteError(LnResponse response)
     {
-        if (response.Result.Error != CosemError.Success || response.ReturnDataError is not (null or CosemError.Success))
+        if (response.Result.Error != CosemResultCode.Success || response.ReturnDataError is not (null or CosemResultCode.Success))
         {
             throw new DlmsOperationException(response);
         }

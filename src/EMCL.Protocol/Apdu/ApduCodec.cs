@@ -70,7 +70,7 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
     private OperationResult ReadResult(ref WireReader r, ref int budget) => r.Byte() switch
     {
         ApduEncoding.DataResult => OperationResult.Ok(axdr.Read(ref r, 0, ref budget)),
-        ApduEncoding.ErrorResult => new((CosemError)r.Byte()),
+        ApduEncoding.ErrorResult => new((CosemResultCode)r.Byte()),
         _ => throw new WireException(DecodeStatus.InvalidData, "Invalid get-data-result choice.")
     };
     private static bool Presence(ref WireReader r) => r.Byte() switch
@@ -176,8 +176,8 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
 
     private void WriteResult(OperationResult result, IBufferWriter<byte> w, ref int budget)
     {
-        WireWriter.Byte(w, result.Error == CosemError.Success ? ApduEncoding.DataResult : ApduEncoding.ErrorResult);
-        if (result.Error == CosemError.Success)
+        WireWriter.Byte(w, result.Error == CosemResultCode.Success ? ApduEncoding.DataResult : ApduEncoding.ErrorResult);
+        if (result.Error == CosemResultCode.Success)
         {
             axdr.Write(result.Value ?? throw new ArgumentException("GET success requires data."), w, 0, ref budget);
         }
@@ -268,7 +268,7 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
         byte choice = reader.Byte(), invoke = reader.Byte();
         if (tag == ApduTag.SetResponse && choice is ApduEncoding.SetBlockResponseChoice or ApduEncoding.SetLastBlockResponseChoice)
         {
-            CosemError? result = choice == ApduEncoding.SetLastBlockResponseChoice ? (CosemError)reader.Byte() : null;
+            CosemResultCode? result = choice == ApduEncoding.SetLastBlockResponseChoice ? (CosemResultCode)reader.Byte() : null;
             return new SetBlockResponse(invoke, reader.U32(), result);
         }
 
@@ -280,7 +280,7 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
             return blockChoice switch
             {
                 ApduEncoding.DataResult => new GetBlockResponse(invoke, last, number, reader.Take(reader.Length(limits.MaxMessageBytes)).ToArray().ToImmutableArray()),
-                ApduEncoding.ErrorResult => new GetBlockResponse(invoke, last, number, [], (CosemError)reader.Byte()),
+                ApduEncoding.ErrorResult => new GetBlockResponse(invoke, last, number, [], (CosemResultCode)reader.Byte()),
                 _ => throw new WireException(DecodeStatus.InvalidData, "Invalid data block choice.")
             };
         }
@@ -299,13 +299,13 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
             }
             else
             {
-                var error = (CosemError)reader.Byte();
+                var error = (CosemResultCode)reader.Byte();
                 DlmsValue? data = null;
                 if (kind == CosemOperationKind.Invoke && Presence(ref reader))
                 {
                     var returned = ReadResult(ref reader, ref budget);
                     result = new(error, returned.Value);
-                    return new LnResponse(kind, invoke, result, returned.Error == CosemError.Success ? null : returned.Error);
+                    return new LnResponse(kind, invoke, result, returned.Error == CosemResultCode.Success ? null : returned.Error);
                 }
 
                 result = new(error, data);

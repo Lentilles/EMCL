@@ -18,5 +18,12 @@ public abstract record ApduFraming
     /// <param name="LinkTimeout">Maximum time allowed for SNRM/UA setup.</param>
     /// <param name="FrameObserver">Optional callback for transmitted (false) and received (true) frames.</param>
     public sealed record Hdlc(HdlcAddress Local, HdlcAddress Remote, TimeSpan LinkTimeout,
-        Action<HdlcFrame, bool>? FrameObserver = null) : ApduFraming;
+        Action<HdlcFrame, bool>? FrameObserver = null) : ApduFraming
+    {
+        /// <summary>Allows incoming frames with a valid FCS to omit the closing flag. Defaults to false.</summary>
+        public bool AllowMissingClosingFlag
+        {
+            get; init;
+        }
+    }
 }

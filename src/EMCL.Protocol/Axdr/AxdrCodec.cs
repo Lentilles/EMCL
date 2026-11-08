@@ -213,7 +213,7 @@ public sealed class AxdrCodec : IIncrementalCodec<DlmsValue>
         }
     }
 
-    private CompactTypeDescription ReadDescription(ref WireReader r, int depth, ref int budget)
+    internal CompactTypeDescription ReadDescription(ref WireReader r, int depth, ref int budget)
     {
         Guard(depth, ref budget);
         var type = (DlmsType)r.Byte();
@@ -243,7 +243,7 @@ public sealed class AxdrCodec : IIncrementalCodec<DlmsValue>
         return CompactTypeDescription.Scalar(type);
     }
 
-    private DlmsValue ReadCompact(ref WireReader r, CompactTypeDescription description, int depth, ref int budget)
+    internal DlmsValue ReadCompact(ref WireReader r, CompactTypeDescription description, int depth, ref int budget)
     {
         if (description.Type is not (DlmsType.Array or DlmsType.Structure))
         {

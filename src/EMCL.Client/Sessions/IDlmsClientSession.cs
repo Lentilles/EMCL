@@ -43,6 +43,15 @@ public interface IDlmsClientSession : IAsyncDisposable
     /// <returns>The typed attribute value.</returns>
     ValueTask<DlmsValue> GetAsync(ushort classId, LogicalName logicalName, sbyte attribute,
         SelectiveAccess? selection = null, CancellationToken cancellationToken = default);
+    /// <summary>Starts a Profile Generic buffer GET and returns a single-use stream after reading the response header.</summary>
+    /// <param name="logicalName">The remote Profile Generic object identity.</param>
+    /// <param name="selection">Optional negotiated selective access by range or entry.</param>
+    /// <param name="cancellationToken">Cancellation of the GET exchange.</param>
+    /// <returns>The incrementally decoded rows and progress for the selected response.</returns>
+    /// <exception cref="NotSupportedException">This session implementation does not support profile streaming, or a required service was not negotiated.</exception>
+    ValueTask<ProfileBufferStream> OpenProfileBufferAsync(LogicalName logicalName,
+        SelectiveAccess? selection = null, CancellationToken cancellationToken = default) =>
+        ValueTask.FromException<ProfileBufferStream>(new NotSupportedException("This session does not support profile streaming."));
     /// <summary>Writes an attribute and throws a DlmsOperationException on a remote access error.</summary>
     /// <remarks>Uses one normal SET when it fits, otherwise negotiated service-specific SET blocks. No automatic retry is performed. A deadline covers the whole transfer.</remarks>
     /// <param name="classId">The remote interface-class identifier.</param>

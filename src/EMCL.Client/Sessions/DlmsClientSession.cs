@@ -16,8 +16,8 @@ namespace EMCL.Client.Sessions;
 /// <remarks>Operations are serialized by default; opt-in concurrency allocates separate invoke IDs. No retries or transport connections are created. Timeout or cancellation after a send attempt faults the association to prevent late-response reuse. Disposal cancels and drains I/O before optionally disposing the channel. Channel implementations must honor cancellation. Calls to the injected codec are serialized by the session.</remarks>
 public sealed partial class DlmsClientSession : IDlmsClientSession
 {
-    private readonly object gate = new();
-    private readonly object codecGate = new();
+    private readonly Lock gate = new();
+    private readonly Lock codecGate = new();
     private readonly IApduChannel channel;
     private readonly IIncrementalCodec<DlmsApdu> codec;
     private readonly IClientAssociationNegotiator negotiator;
@@ -130,20 +130,8 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
 
         try
         {
-            await SendAsync(request, options.Limits.MaxMessageBytes, deadline.Token).ConfigureAwait(false);
-            if (options.AssociationRetryDelay is { } retryDelay)
-            {
-                var responseTask = pending.Response.Task;
-                var first = await Task.WhenAny(responseTask,
-                    Task.Delay(retryDelay, options.TimeProvider, deadline.Token)).ConfigureAwait(false);
-                if (first != responseTask && !responseTask.IsCompleted)
-                {
-                    await ((IAssociationRequestRetransmission)channel)
-                        .RetryUnansweredAssociationRequestAsync(deadline.Token).ConfigureAwait(false);
-                }
-            }
-
-            var response = await pending.Response.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
+            var response = await ExchangeAssociationRequestAsync(request, pending.Response.Task, deadline.Token)
+                .ConfigureAwait(false);
             var context = negotiator.AcceptResponse(response, options.Association);
             ValidateNegotiatedContext(context);
             lock (gate)
@@ -153,15 +141,12 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
                 associationReady.TrySetResult();
             }
 
-            if (negotiator is IClientHighLevelAuthenticator authenticator)
+            if (negotiator is IClientHighLevelAuthenticator authenticator
+                && authenticator.CreateAuthenticationOperation(request, response, options.Association) is { } operation)
             {
-                var operation = authenticator.CreateAuthenticationOperation(request, response, options.Association);
-                if (operation != null)
-                {
-                    stage = "HLS ACTION";
-                    var result = await AuthenticateAsync(operation, deadline.Token).ConfigureAwait(false);
-                    authenticator.ValidateAuthenticationResponse(result.Result.Value, request, response, options.Association);
-                }
+                stage = "HLS ACTION";
+                var result = await AuthenticateAsync(operation, deadline.Token).ConfigureAwait(false);
+                authenticator.ValidateAuthenticationResponse(result.Result.Value, request, response, options.Association);
             }
 
             lock (gate)
@@ -179,6 +164,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
             {
                 error = new TimeoutException($"stage={stage}; association deadline expired.", timeout);
             }
+
             Fault(error);
             ExceptionDispatchInfo.Capture(error).Throw();
             throw;
@@ -188,6 +174,24 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
             Fault(error);
             throw;
         }
+    }
+
+    private async ValueTask<AcseApdu> ExchangeAssociationRequestAsync(AcseApdu request, Task<AcseApdu> responseTask,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync(request, options.Limits.MaxMessageBytes, cancellationToken).ConfigureAwait(false);
+        if (options.AssociationRetryDelay is { } retryDelay)
+        {
+            var delay = Task.Delay(retryDelay, options.TimeProvider, cancellationToken);
+            var first = await Task.WhenAny(responseTask, delay).ConfigureAwait(false);
+            if (first == delay && !responseTask.IsCompleted)
+            {
+                await ((IAssociationRequestRetransmission)channel)
+                    .RetryUnansweredAssociationRequestAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return await responseTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<LnResponse> AuthenticateAsync(CosemOperation operation, CancellationToken cancellationToken)
@@ -210,14 +214,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
         }
         finally
         {
-            lock (gate)
-            {
-                operations.Remove(pending.Id);
-                if (--activeOperations == 0)
-                {
-                    idle.TrySetResult();
-                }
-            }
+            UnregisterOperation(pending);
         }
     }
 

@@ -6,6 +6,8 @@ namespace EMCL.Client.Association;
 /// <summary>Configures an unciphered, confirmed LN association proposal.</summary>
 public sealed record LnAssociationOptions
 {
+    private const uint MaximumAdvertisedConformance = 0xFFFFFF;
+
     /// <summary>The default advertised maximum receive PDU length.</summary>
     public const ushort DefaultMaxReceivePduSize = 1024;
     /// <summary>The required secret length in octets for the built-in AES high-level mechanism.</summary>
@@ -45,17 +47,7 @@ public sealed record LnAssociationOptions
 
     internal void Validate()
     {
-        if ((Conformance & ~SupportedConformance) != DlmsConformance.None)
-        {
-            throw new NotSupportedException("The client proposal contains unsupported conformance flags.");
-        }
-
-        if (AdvertisedConformance is { } advertised
-            && ((uint)advertised > 0xFFFFFF || (Conformance & ~advertised) != DlmsConformance.None))
-        {
-            throw new ArgumentException("The advertised conformance must be a 24-bit value containing all implemented requested services.",
-                nameof(AdvertisedConformance));
-        }
+        ValidateConformance();
 
         if (ResponseAllowed == false)
         {
@@ -67,6 +59,26 @@ public sealed record LnAssociationOptions
             throw new ArgumentOutOfRangeException(nameof(MaxReceivePduSize));
         }
 
+        ValidateAuthentication();
+    }
+
+    private void ValidateConformance()
+    {
+        if ((Conformance & ~SupportedConformance) != DlmsConformance.None)
+        {
+            throw new NotSupportedException("The client proposal contains unsupported conformance flags.");
+        }
+
+        if (AdvertisedConformance is { } advertised
+            && ((uint)advertised > MaximumAdvertisedConformance || (Conformance & ~advertised) != DlmsConformance.None))
+        {
+            throw new ArgumentException("The advertised conformance must be a 24-bit value containing all implemented requested services.",
+                nameof(AdvertisedConformance));
+        }
+    }
+
+    private void ValidateAuthentication()
+    {
         if (!Enum.IsDefined(Authentication))
         {
             throw new NotSupportedException("The selected authentication mechanism is not implemented.");
@@ -77,17 +89,19 @@ public sealed record LnAssociationOptions
             throw new ArgumentException("A password requires an authentication mechanism.");
         }
 
-        if (Authentication == ClientAuthentication.High)
+        if (Authentication != ClientAuthentication.High)
         {
-            if (Password.IsDefaultOrEmpty || Password.Length != HighSecretLength)
-            {
-                throw new ArgumentException($"High authentication requires a {HighSecretLength}-byte secret.");
-            }
+            return;
+        }
 
-            if ((Conformance & DlmsConformance.Action) == DlmsConformance.None)
-            {
-                throw new ArgumentException("High authentication requires Action conformance.");
-            }
+        if (Password.IsDefaultOrEmpty || Password.Length != HighSecretLength)
+        {
+            throw new ArgumentException($"High authentication requires a {HighSecretLength}-byte secret.");
+        }
+
+        if ((Conformance & DlmsConformance.Action) == DlmsConformance.None)
+        {
+            throw new ArgumentException("High authentication requires Action conformance.");
         }
     }
 }

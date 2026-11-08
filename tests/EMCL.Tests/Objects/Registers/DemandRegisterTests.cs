@@ -32,7 +32,7 @@ public sealed class DemandRegisterTests
         var status = Number(DlmsType.UInt16, 3);
         register.State.Set(5, status);
         clock.Now = clock.Now.AddSeconds(5);
-        Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(device, register, CosemOperationKind.Invoke,
+        Assert.Equal(CosemResultCode.Success, (await ExecuteOperationAsync(device, register, CosemOperationKind.Invoke,
             2, Number(DlmsType.Int8, 0))).Error);
         Assert.Equal(20d, ReadStoredValue(register, 3).Value);
         Assert.Equal(0d, ReadStoredValue(register, 2).Value);
@@ -44,7 +44,7 @@ public sealed class DemandRegisterTests
         clock.Now = clock.Now.AddSeconds(periods * 10);
         await Sample(80);
         Assert.Equal(80d, ReadStoredValue(register, 2).Value);
-        Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(device, register, CosemOperationKind.Invoke,
+        Assert.Equal(CosemResultCode.Success, (await ExecuteOperationAsync(device, register, CosemOperationKind.Invoke,
             1, Number(DlmsType.Int8, 0))).Error);
         Assert.Equal(0d, ReadStoredValue(register, 2).Value);
         Assert.Equal(0d, ReadStoredValue(register, 3).Value);
@@ -52,7 +52,7 @@ public sealed class DemandRegisterTests
         await Sample(90);
         Assert.Equal(90d, ReadStoredValue(register, 2).Value);
 
-        async Task Sample(long value) => Assert.Equal(CosemError.Success,
+        async Task Sample(long value) => Assert.Equal(CosemResultCode.Success,
             (await handler.RecordSampleAsync(register, Number(DlmsType.Int32, value), TestContext.Current.CancellationToken)).Error);
     }
 
@@ -63,26 +63,26 @@ public sealed class DemandRegisterTests
         var device = new EmclBuilder { MeasurementTimeProvider = clock }.Build("meter");
         var register = device.Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
         var handler = Assert.IsType<DemandRegisterHandler>(device.Handlers.Resolve("meter", register));
-        Assert.Equal(CosemError.ObjectUnavailable, (await Record(1)).Error);
+        Assert.Equal(CosemResultCode.ObjectUnavailable, (await Record(1)).Error);
         Assert.Equal(1UL, (await ExecuteOperationAsync(device, register, CosemOperationKind.Read, 9)).Value!.AsUInt64());
         foreach (sbyte index in new sbyte[] { 8, 9 })
         {
-            Assert.Equal(CosemError.TypeUnmatched, (await ExecuteOperationAsync(device, register, CosemOperationKind.Write,
+            Assert.Equal(CosemResultCode.TypeUnmatched, (await ExecuteOperationAsync(device, register, CosemOperationKind.Write,
                 index, Number(index == 8 ? DlmsType.UInt32 : DlmsType.UInt16, 0))).Error);
         }
 
         await WriteValueAsync(device, register, 8, Number(DlmsType.UInt32, 60));
-        Assert.Equal(CosemError.Success, (await Record(10)).Error);
+        Assert.Equal(CosemResultCode.Success, (await Record(10)).Error);
         var value = ReadStoredValue(register, 2);
         var start = ReadStoredValue(register, 7);
         clock.Now = clock.Now.AddSeconds(-1);
-        Assert.Equal(CosemError.TemporaryFailure, (await Record(100)).Error);
+        Assert.Equal(CosemResultCode.TemporaryFailure, (await Record(100)).Error);
         clock.Now = clock.Now.AddSeconds(2);
-        Assert.Equal(CosemError.TypeUnmatched, (await handler.RecordSampleAsync(register, new(DlmsType.Float64, double.NaN),
+        Assert.Equal(CosemResultCode.TypeUnmatched, (await handler.RecordSampleAsync(register, new(DlmsType.Float64, double.NaN),
             TestContext.Current.CancellationToken)).Error);
         Assert.Same(value, ReadStoredValue(register, 2));
         Assert.Same(start, ReadStoredValue(register, 7));
-        Assert.Equal(CosemError.Success, (await Record(30)).Error);
+        Assert.Equal(CosemResultCode.Success, (await Record(30)).Error);
         Assert.Equal(20d, ReadStoredValue(register, 2).Value);
 
         ValueTask<OperationResult> Record(long value) => handler.RecordSampleAsync(register, Number(DlmsType.Int32, value),
@@ -98,10 +98,10 @@ public sealed class DemandRegisterTests
         await WriteValueAsync(device, register, 8, Number(DlmsType.UInt32, 600));
         await Record(10);
         await Record(20);
-        Assert.Equal(CosemError.TemporaryFailure, (await Record(30)).Error);
+        Assert.Equal(CosemResultCode.TemporaryFailure, (await Record(30)).Error);
         Assert.Equal(15d, ReadStoredValue(register, 2).Value);
         await WriteValueAsync(device, register, 9, Number(DlmsType.UInt16, 2));
-        Assert.Equal(CosemError.Success, (await Record(90)).Error);
+        Assert.Equal(CosemResultCode.Success, (await Record(90)).Error);
         Assert.Equal(90d, ReadStoredValue(register, 2).Value);
 
         ValueTask<OperationResult> Record(long value) => handler.RecordSampleAsync(register, Number(DlmsType.Int16, value),
@@ -118,16 +118,16 @@ public sealed class DemandRegisterTests
         var register = device.Add(5, 0, LogicalName.Parse("1.0.1.6.0.255"));
         var handler = Assert.IsType<DemandRegisterHandler>(device.Handlers.Resolve("meter", register));
         await WriteValueAsync(device, register, 8, Number(DlmsType.UInt32, 60));
-        Assert.Equal(CosemError.Success, (await Record(10)).Error);
+        Assert.Equal(CosemResultCode.Success, (await Record(10)).Error);
         calculator.Invalid = true;
-        Assert.Equal(CosemError.TypeUnmatched, (await Record(99)).Error);
+        Assert.Equal(CosemResultCode.TypeUnmatched, (await Record(99)).Error);
         Assert.Equal(10L, ReadStoredValue(register, 2).AsInt64());
         calculator.Invalid = false;
-        Assert.Equal(CosemError.Success, (await Record(30)).Error);
+        Assert.Equal(CosemResultCode.Success, (await Record(30)).Error);
         Assert.Equal(2, calculator.LastCount);
         var custom = new DemandRegisterHandler(resetValue: (_, index) => Number(DlmsType.UInt32, index));
         device.Handlers.ForInstance("meter", register.LogicalName, custom);
-        Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(device, register, CosemOperationKind.Invoke,
+        Assert.Equal(CosemResultCode.Success, (await ExecuteOperationAsync(device, register, CosemOperationKind.Invoke,
             1, Number(DlmsType.Int8, 0))).Error);
         Assert.Equal(2L, ReadStoredValue(register, 2).AsInt64());
         Assert.Equal(3L, ReadStoredValue(register, 3).AsInt64());
@@ -159,19 +159,19 @@ public sealed class DemandRegisterTests
             await WriteValueAsync(device, register, 8, Number(DlmsType.UInt32, 60));
         }
 
-        Assert.Equal(CosemError.Success, (await Record(first, 10)).Error);
-        Assert.Equal(CosemError.Success, (await Record(second, 100)).Error);
+        Assert.Equal(CosemResultCode.Success, (await Record(first, 10)).Error);
+        Assert.Equal(CosemResultCode.Success, (await Record(second, 100)).Error);
         var value = ReadStoredValue(first, 2);
         var start = ReadStoredValue(first, 7);
         // last_average_value has no known type yet, so reset must not partially reset current_average_value.
-        Assert.Equal(CosemError.ObjectUnavailable, (await ExecuteOperationAsync(device, first, CosemOperationKind.Invoke,
+        Assert.Equal(CosemResultCode.ObjectUnavailable, (await ExecuteOperationAsync(device, first, CosemOperationKind.Invoke,
             1, Number(DlmsType.Int8, 0))).Error);
         Assert.Same(value, ReadStoredValue(first, 2));
         Assert.Same(start, ReadStoredValue(first, 7));
         Assert.False(first.State.TryGet(6, out _));
-        Assert.Equal(CosemError.TypeUnmatched, (await handler.RecordSampleAsync(first, Number(DlmsType.UInt8, 999),
+        Assert.Equal(CosemResultCode.TypeUnmatched, (await handler.RecordSampleAsync(first, Number(DlmsType.UInt8, 999),
             TestContext.Current.CancellationToken)).Error);
-        Assert.Equal(CosemError.Success, (await Record(first, 30)).Error);
+        Assert.Equal(CosemResultCode.Success, (await Record(first, 30)).Error);
         Assert.Equal(20d, ReadStoredValue(first, 2).Value);
         Assert.Equal(100d, ReadStoredValue(second, 2).Value);
 

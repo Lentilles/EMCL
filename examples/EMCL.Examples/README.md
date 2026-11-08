@@ -43,6 +43,8 @@ The port closes when the channel is disposed, an active read/write is canceled, 
 
 For HDLC server address `1/17`, the default encoding uses two bytes, `02 23`. For the four-byte form `00 02 00 23`, set `"extendedAddress": true` in `channel.framing`. In the legacy configuration format, this field is named `"hdlcExtendedAddress": true` and belongs to `connection`. Both forms represent the same logical and physical addresses; the length is shown in the connection description.
 
+If the meter omits the final `0x7E`, set `"allowMissingClosingFlag": true` in `channel.framing`. The HDLC trace renders decoded frames in standard wire format, including both flags.
+
 The console shows communication: complete DLMS APDUs for Wrapper, and SNRM/UA/I/RR frames for HDLC. Each message receives a number, a `TX`/`RX` direction, a type, a length, and hexadecimal bytes. For example, `[0001] TX Aarq (42 bytes): 6028...`. With HDLC, the full AARQ frame is printed, including authentication data; review such logs before sharing them. Authentication ACTION frames and Wrapper AARQ messages remain hidden. Individual byte-stream reads do not increment the counter.
 
 After AARE, the application shows the number of `object_list` entries advertised by the meter, then prints each validated entry with its number, OBIS code, class, and version as GET blocks arrive. The final JSON is saved only after the entire list has been received and validated.

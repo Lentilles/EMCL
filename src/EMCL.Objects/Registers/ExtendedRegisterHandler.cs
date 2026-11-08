@@ -44,7 +44,7 @@ public sealed class ExtendedRegisterHandler : StoredValueHandler
             error ??= status == null ? null : RegisterValues.Validate(cosemObject, ExtendedRegisterMembers.Attributes.Status, status, limits);
             if (error != null)
             {
-                return new(CosemError.TypeUnmatched, Diagnostic: error);
+                return new(CosemResultCode.TypeUnmatched, Diagnostic: error);
             }
 
             var timestamp = RegisterValues.Timestamp(cosemObject, ExtendedRegisterMembers.Attributes.CaptureTime, timeProvider.GetUtcNow());
@@ -76,19 +76,19 @@ public sealed class ExtendedRegisterHandler : StoredValueHandler
 
         if (!RegisterValues.IsZeroParameter(operation.Value))
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.TypeUnmatched));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.TypeUnmatched));
         }
 
         var value = resetValue?.Invoke(cosemObject) ?? RegisterValues.Default(cosemObject, ExtendedRegisterMembers.Attributes.Value);
         if (value == null)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.ObjectUnavailable));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.ObjectUnavailable));
         }
 
         var error = RegisterValues.Validate(cosemObject, ExtendedRegisterMembers.Attributes.Value, value, limits);
         if (error != null)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.TypeUnmatched, Diagnostic: error));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.TypeUnmatched, Diagnostic: error));
         }
 
         var timestamp = RegisterValues.Timestamp(cosemObject, ExtendedRegisterMembers.Attributes.CaptureTime, timeProvider.GetUtcNow());

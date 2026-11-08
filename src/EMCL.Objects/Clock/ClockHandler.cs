@@ -75,7 +75,7 @@ public sealed class ClockHandler(IClockSource clock, TimeSpan? measuringPeriod =
         DateTimeOffset updated;
         if (operation.Index is >= ClockMembers.Methods.AdjustToQuarter and <= ClockMembers.Methods.AdjustToPresetTime && operation.Value?.AsInt64() != 0)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.TypeUnmatched));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.TypeUnmatched));
         }
 
         switch (operation.Index)
@@ -92,7 +92,7 @@ public sealed class ClockHandler(IClockSource clock, TimeSpan? measuringPeriod =
             case ClockMembers.Methods.AdjustToPresetTime:
                 if (!presets.TryGetValue(cosemObject.LogicalName, out var preset) || now < preset.Start || now > preset.End)
                 {
-                    return ValueTask.FromResult(new OperationResult(CosemError.TemporaryFailure));
+                    return ValueTask.FromResult(new OperationResult(CosemResultCode.TemporaryFailure));
                 }
 
                 updated = preset.Time;
@@ -111,7 +111,7 @@ public sealed class ClockHandler(IClockSource clock, TimeSpan? measuringPeriod =
                 long seconds = operation.Value!.AsInt64();
                 if (seconds is < -MaximumShiftSeconds or > MaximumShiftSeconds)
                 {
-                    return ValueTask.FromResult(new OperationResult(CosemError.ScopeOfAccessViolated));
+                    return ValueTask.FromResult(new OperationResult(CosemResultCode.ScopeOfAccessViolated));
                 }
 
                 clock.ShiftTime(cosemObject.LogicalName, TimeSpan.FromSeconds(seconds));

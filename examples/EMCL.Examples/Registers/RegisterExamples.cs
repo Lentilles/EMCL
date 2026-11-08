@@ -45,7 +45,7 @@ internal static class RegisterExamples
 
     private static void EnsureSuccess(OperationResult result)
     {
-        if (result.Error != CosemError.Success)
+        if (result.Error != CosemResultCode.Success)
         {
             throw new InvalidOperationException($"Register example failed: {result.Error}: {result.Diagnostic}");
         }

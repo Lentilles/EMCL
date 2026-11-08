@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../EMCL.Core/EMCL.Core.csproj" />
+    <InternalsVisibleTo Include="EMCL.Client" />
   </ItemGroup>
 </Project>

@@ -22,7 +22,7 @@ public sealed class CatalogCaptureValueSource(ObjectCatalog catalog, HandlerRegi
         var obj = catalog.Find(capture.LogicalName);
         if (obj == null || obj.Descriptor.Key.ClassId != capture.ClassId)
         {
-            return new(CosemError.ObjectUndefined);
+            return new(CosemResultCode.ObjectUndefined);
         }
 
         async ValueTask<OperationResult> Read(sbyte index)
@@ -30,7 +30,7 @@ public sealed class CatalogCaptureValueSource(ObjectCatalog catalog, HandlerRegi
             var op = new CosemOperation(CosemOperationKind.Read, capture.ClassId, capture.LogicalName, index);
             if (!access.Allows(obj, op, context))
             {
-                return new(CosemError.ReadWriteDenied);
+                return new(CosemResultCode.ReadWriteDenied);
             }
 
             return await handlers.Resolve(catalog.LogicalDeviceId, obj).ReadAsync(obj, op, context, cancellationToken).ConfigureAwait(false);
@@ -43,7 +43,7 @@ public sealed class CatalogCaptureValueSource(ObjectCatalog catalog, HandlerRegi
             foreach (var attr in obj.Descriptor.Attributes.Where(a => a.Index > 0))
             {
                 var item = await Read(attr.Index).ConfigureAwait(false);
-                if (item.Error != CosemError.Success)
+                if (item.Error != CosemResultCode.Success)
                 {
                     return item;
                 }
@@ -58,7 +58,7 @@ public sealed class CatalogCaptureValueSource(ObjectCatalog catalog, HandlerRegi
             result = await Read(capture.AttributeIndex).ConfigureAwait(false);
         }
 
-        if (result.Error != CosemError.Success || capture.DataIndex == 0)
+        if (result.Error != CosemResultCode.Success || capture.DataIndex == 0)
         {
             return result;
         }
@@ -69,12 +69,12 @@ public sealed class CatalogCaptureValueSource(ObjectCatalog catalog, HandlerRegi
             var rows = ProfileGenericHandler.GetRows(value);
             if (rows.Any(row => row.Type != DlmsType.Structure || row.Items.Length < capture.DataIndex))
             {
-                return new(CosemError.ScopeOfAccessViolated);
+                return new(CosemResultCode.ScopeOfAccessViolated);
             }
 
             return OperationResult.Ok(DlmsValue.Array(rows.Select(row => row.Items[capture.DataIndex - 1]).ToArray()));
         }
 
-        return value.Type == DlmsType.Structure ? capture.DataIndex <= value.Items.Length ? OperationResult.Ok(value.Items[capture.DataIndex - 1]) : new(CosemError.ScopeOfAccessViolated) : result;
+        return value.Type == DlmsType.Structure ? capture.DataIndex <= value.Items.Length ? OperationResult.Ok(value.Items[capture.DataIndex - 1]) : new(CosemResultCode.ScopeOfAccessViolated) : result;
     }
 }

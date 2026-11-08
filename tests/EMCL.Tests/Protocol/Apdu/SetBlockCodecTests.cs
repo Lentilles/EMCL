@@ -46,7 +46,7 @@ public sealed class SetBlockCodecTests
         var ack = Assert.IsType<SetBlockResponse>(DecodeComplete(codec, FromHex("C502C100000001")));
         Assert.Null(ack.Result);
         var final = Assert.IsType<SetBlockResponse>(DecodeComplete(codec, FromHex("C503C10000000002")));
-        Assert.Equal(CosemError.Success, final.Result);
+        Assert.Equal(CosemResultCode.Success, final.Result);
         Assert.Equal(2u, final.BlockNumber);
     }
 

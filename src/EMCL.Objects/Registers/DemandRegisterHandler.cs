@@ -52,12 +52,12 @@ public sealed class DemandRegisterHandler : StoredValueHandler
         {
             if (!RegisterValues.IsNumeric(sample.Type))
             {
-                return new(CosemError.TypeUnmatched, Diagnostic: "A demand sample must be numeric.");
+                return new(CosemResultCode.TypeUnmatched, Diagnostic: "A demand sample must be numeric.");
             }
 
             if (!cosemObject.State.TryGet(DemandRegisterMembers.Attributes.Period, out var period))
             {
-                return new(CosemError.ObjectUnavailable, Diagnostic: "Configure the demand period before recording samples.");
+                return new(CosemResultCode.ObjectUnavailable, Diagnostic: "Configure the demand period before recording samples.");
             }
 
             var count = PeriodCount(cosemObject);
@@ -65,21 +65,21 @@ public sealed class DemandRegisterHandler : StoredValueHandler
                 ?? RegisterValues.Validate(cosemObject, DemandRegisterMembers.Attributes.NumberOfPeriods, count, limits);
             if (error != null)
             {
-                return new(CosemError.TypeUnmatched, Diagnostic: error);
+                return new(CosemResultCode.TypeUnmatched, Diagnostic: error);
             }
 
             var now = timeProvider.GetUtcNow();
             var buffer = buffers.GetValue(cosemObject, _ => new SampleBuffer());
             if (buffer.LastTimestamp.HasValue && now < buffer.LastTimestamp.Value)
             {
-                return new(CosemError.TemporaryFailure, Diagnostic: "The measurement clock moved backwards.");
+                return new(CosemResultCode.TemporaryFailure, Diagnostic: "The measurement clock moved backwards.");
             }
 
             double windowSeconds = (double)period.AsUInt64() * count.AsUInt64();
             var retained = buffer.Samples.Where(s => (now - s.Timestamp).TotalSeconds < windowSeconds).ToImmutableArray();
             if (retained.Length >= limits.MaxCollectionItems)
             {
-                return new(CosemError.TemporaryFailure, Diagnostic: "The demand sample limit was reached.");
+                return new(CosemResultCode.TemporaryFailure, Diagnostic: "The demand sample limit was reached.");
             }
 
             var candidate = retained.Add(new(now, sample));
@@ -94,12 +94,12 @@ public sealed class DemandRegisterHandler : StoredValueHandler
             catch (Exception exception) when (exception is ArgumentException or FormatException or InvalidOperationException
                 or OverflowException or InvalidCastException or NotSupportedException)
             {
-                return new(CosemError.TypeUnmatched, Diagnostic: exception.Message);
+                return new(CosemResultCode.TypeUnmatched, Diagnostic: exception.Message);
             }
 
             if (error != null)
             {
-                return new(CosemError.TypeUnmatched, Diagnostic: error);
+                return new(CosemResultCode.TypeUnmatched, Diagnostic: error);
             }
 
             var start = RegisterValues.Timestamp(cosemObject, DemandRegisterMembers.Attributes.StartTimeCurrent, now);
@@ -135,7 +135,7 @@ public sealed class DemandRegisterHandler : StoredValueHandler
         OperationContext context, CancellationToken cancellationToken)
     {
         var result = await base.WriteAsync(cosemObject, operation, context, cancellationToken).ConfigureAwait(false);
-        if (result.Error == CosemError.Success && operation.Index is DemandRegisterMembers.Attributes.CurrentAverageValue or DemandRegisterMembers.Attributes.LastAverageValue or DemandRegisterMembers.Attributes.Period or DemandRegisterMembers.Attributes.NumberOfPeriods)
+        if (result.Error == CosemResultCode.Success && operation.Index is DemandRegisterMembers.Attributes.CurrentAverageValue or DemandRegisterMembers.Attributes.LastAverageValue or DemandRegisterMembers.Attributes.Period or DemandRegisterMembers.Attributes.NumberOfPeriods)
         {
             buffers.Remove(cosemObject);
         }
@@ -155,7 +155,7 @@ public sealed class DemandRegisterHandler : StoredValueHandler
 
         if (!RegisterValues.IsZeroParameter(operation.Value))
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.TypeUnmatched));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.TypeUnmatched));
         }
 
         var current = resetValue?.Invoke(cosemObject, DemandRegisterMembers.Attributes.CurrentAverageValue) ?? RegisterValues.Default(cosemObject, DemandRegisterMembers.Attributes.CurrentAverageValue);
@@ -164,7 +164,7 @@ public sealed class DemandRegisterHandler : StoredValueHandler
             : cosemObject.State.TryGet(DemandRegisterMembers.Attributes.CurrentAverageValue, out var previous) ? previous : null;
         if (current == null || last == null)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.ObjectUnavailable));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.ObjectUnavailable));
         }
 
         var count = PeriodCount(cosemObject);
@@ -173,7 +173,7 @@ public sealed class DemandRegisterHandler : StoredValueHandler
             ?? RegisterValues.Validate(cosemObject, DemandRegisterMembers.Attributes.NumberOfPeriods, count, limits);
         if (error != null)
         {
-            return ValueTask.FromResult(new OperationResult(CosemError.TypeUnmatched, Diagnostic: error));
+            return ValueTask.FromResult(new OperationResult(CosemResultCode.TypeUnmatched, Diagnostic: error));
         }
 
         var now = timeProvider.GetUtcNow();

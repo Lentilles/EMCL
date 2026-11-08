@@ -55,6 +55,46 @@ public sealed class HdlcCodecTests
     }
 
     [Fact]
+    public void MissingClosingFlagIsOptionalAndLeavesTheNextOpeningFlagUnread()
+    {
+        byte[] frame = FromHex("7EA00861022373CD55");
+        var strict = new HdlcCodec();
+        var compatible = new HdlcCodec { AllowMissingClosingFlag = true };
+
+        Assert.Equal(DecodeStatus.NeedMoreData, strict.Decode(new(frame)).Status);
+        Assert.Equal(DecodeStatus.NeedMoreData, compatible.Decode(new(frame.AsMemory(0, frame.Length - 1))).Status);
+        var decoded = compatible.Decode(new(frame));
+        Assert.Equal(DecodeStatus.Done, decoded.Status);
+        Assert.Equal(frame.Length, decoded.Consumed);
+        Assert.Equal(HdlcControl.Ua, decoded.Value!.Control);
+        Assert.Equal(HdlcFrameFormat.Flag, compatible.EncodeBytes(decoded.Value)[^1]);
+
+        byte[] pair = [.. frame, .. frame];
+        var first = compatible.Decode(new(pair));
+        Assert.Equal(DecodeStatus.Done, first.Status);
+        Assert.Equal(frame.Length, first.Consumed);
+        Assert.Equal(DecodeStatus.Done, compatible.Decode(new(pair.AsMemory((int)first.Consumed))).Status);
+    }
+
+    [Fact]
+    public void MissingClosingFlagCompatibilityStillRequiresOpeningFlagAndChecksums()
+    {
+        var codec = new HdlcCodec { AllowMissingClosingFlag = true };
+        byte[] frame = codec.EncodeBytes(new(HdlcAddress.Server(1), HdlcAddress.Client(16), 0x10, [1, 2, 3]));
+        Assert.Equal(DecodeStatus.InvalidData, codec.Decode(new(frame.AsMemory(1))).Status);
+
+        frame[^2] ^= 1;
+        var invalidFcs = codec.Decode(new(frame.AsMemory(0, frame.Length - 1)));
+        Assert.Equal(DecodeStatus.InvalidData, invalidFcs.Status);
+        Assert.Contains("Invalid HDLC FCS", invalidFcs.Error);
+
+        frame[6] ^= 1;
+        var invalidHcs = codec.Decode(new(frame.AsMemory(0, frame.Length - 1)));
+        Assert.Equal(DecodeStatus.InvalidData, invalidHcs.Status);
+        Assert.Contains("Invalid HDLC HCS", invalidHcs.Error);
+    }
+
+    [Fact]
     public void ValidatesAddressesChecksumsAndSegmentation()
     {
         Assert.Equal((ushort)0x906e, HdlcChecksum.Compute(Encoding.ASCII.GetBytes("123456789")));

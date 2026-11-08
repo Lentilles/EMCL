@@ -9,11 +9,12 @@ namespace EMCL.Protocol.BlockTransfer;
 /// <remarks>Begin is explicit so a late block cannot silently create a new transfer. Accept aborts a transfer after an invalid block. Instances are thread-safe.</remarks>
 public sealed class GetBlockAssembler
 {
-    private sealed class Transfer
+    private sealed class Transfer(bool assemble)
     {
         public uint Expected = 1;
         public int Count;
-        public List<byte> Bytes = [];
+        public int ByteCount;
+        public List<byte>? Bytes { get; } = assemble ? [] : null;
     }
 
     private readonly Dictionary<GetExchangeKey, Transfer> transfers = [];
@@ -29,7 +30,9 @@ public sealed class GetBlockAssembler
     /// <param name="key">The exact class key or independently scoped GET transfer key.</param>
     /// <exception cref="InvalidOperationException">A transfer with this key is already active.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The invoke identifier exceeds four bits.</exception>
-    public void Begin(GetExchangeKey key)
+    public void Begin(GetExchangeKey key) => Begin(key, assemble: true);
+
+    internal void Begin(GetExchangeKey key, bool assemble)
     {
         if (key.InvokeId > InvokeIdEncoding.IdMask)
         {
@@ -38,7 +41,7 @@ public sealed class GetBlockAssembler
 
         lock (transfers)
         {
-            if (!transfers.TryAdd(key, new()))
+            if (!transfers.TryAdd(key, new(assemble)))
             {
                 throw new InvalidOperationException("GET transfer is already active.");
             }
@@ -65,40 +68,41 @@ public sealed class GetBlockAssembler
         {
             if (!transfers.TryGetValue(key, out var transfer))
             {
-                return new(false, [], CosemError.NoLongGetInProgress);
+                return new(false, [], CosemResultCode.NoLongGetInProgress);
             }
 
-            CosemError error = CosemError.Success;
+            CosemResultCode error = CosemResultCode.Success;
             if ((block.InvokeIdAndPriority & InvokeIdEncoding.IdMask) != key.InvokeId || block.BlockNumber != transfer.Expected)
             {
-                error = CosemError.DataBlockNumberInvalid;
+                error = CosemResultCode.DataBlockNumberInvalid;
             }
             else if (block.Error.HasValue)
             {
-                error = block.Error.Value == CosemError.Success ? CosemError.OtherReason : block.Error.Value;
+                error = block.Error.Value == CosemResultCode.Success ? CosemResultCode.OtherReason : block.Error.Value;
             }
-            else if (++transfer.Count > limits.MaxBlockCount || block.Data.Length > limits.MaxMessageBytes - transfer.Bytes.Count)
+            else if (++transfer.Count > limits.MaxBlockCount || block.Data.Length > limits.MaxMessageBytes - transfer.ByteCount)
             {
-                error = CosemError.LongGetAborted;
+                error = CosemResultCode.LongGetAborted;
             }
 
-            if (error != CosemError.Success)
+            if (error != CosemResultCode.Success)
             {
                 transfers.Remove(key);
                 return new(false, [], error);
             }
 
-            transfer.Bytes.AddRange(block.Data);
+            transfer.ByteCount += block.Data.Length;
+            transfer.Bytes?.AddRange(block.Data);
             if (block.LastBlock)
             {
                 transfers.Remove(key);
-                return new(true, transfer.Bytes.ToImmutableArray());
+                return new(true, transfer.Bytes?.ToImmutableArray() ?? []);
             }
 
             if (transfer.Expected == uint.MaxValue)
             {
                 transfers.Remove(key);
-                return new(false, [], CosemError.LongGetAborted);
+                return new(false, [], CosemResultCode.LongGetAborted);
             }
 
             transfer.Expected++;

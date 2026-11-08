@@ -7,4 +7,4 @@ namespace EMCL.Protocol.BlockTransfer;
 /// <param name="Complete">Whether the final block has been received successfully.</param>
 /// <param name="Data">The raw block payload or complete assembled bytes.</param>
 /// <param name="Error">The operation or decode error, if any.</param>
-public sealed record BlockAssemblyResult(bool Complete, ImmutableArray<byte> Data, CosemError Error = CosemError.Success);
+public sealed record BlockAssemblyResult(bool Complete, ImmutableArray<byte> Data, CosemResultCode Error = CosemResultCode.Success);

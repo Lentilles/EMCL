@@ -216,8 +216,8 @@ public sealed class ClientBlockTransferTests
         await peer.AssociateAsync(client);
         var reading = SessionPeer.GetAsync(client, TestContext.Current.CancellationToken).AsTask();
         var request = await peer.ReadAsync<LnRequest>();
-        await peer.SendAsync(new GetBlockResponse(request.InvokeIdAndPriority, true, 1, [], CosemError.LongGetAborted));
-        Assert.Equal(CosemError.LongGetAborted, (await Assert.ThrowsAsync<DlmsOperationException>(async () => await reading)).Error);
+        await peer.SendAsync(new GetBlockResponse(request.InvokeIdAndPriority, true, 1, [], CosemResultCode.LongGetAborted));
+        Assert.Equal(CosemResultCode.LongGetAborted, (await Assert.ThrowsAsync<DlmsOperationException>(async () => await reading)).Error);
         Assert.Equal(ClientSessionState.Associated, client.State);
         await peer.ReleaseAsync(client);
     }

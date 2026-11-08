@@ -48,23 +48,23 @@ public sealed class ObjectDispatcher : IDlmsPipeline
         ct.ThrowIfCancellationRequested();
         if (ctx.LogicalDeviceId != catalog.LogicalDeviceId)
         {
-            return new(CosemError.ObjectUndefined, Diagnostic: "Wrong logical device.");
+            return new(CosemResultCode.ObjectUndefined, Diagnostic: "Wrong logical device.");
         }
 
         var obj = catalog.Find(op.LogicalName);
         if (obj == null)
         {
-            return new(CosemError.ObjectUndefined);
+            return new(CosemResultCode.ObjectUndefined);
         }
 
         if (obj.Descriptor.Key.ClassId != op.ClassId)
         {
-            return new(CosemError.ObjectClassInconsistent);
+            return new(CosemResultCode.ObjectClassInconsistent);
         }
 
         if (!access.Allows(obj, op, ctx))
         {
-            return new(CosemError.ReadWriteDenied);
+            return new(CosemResultCode.ReadWriteDenied);
         }
 
         try
@@ -80,12 +80,12 @@ public sealed class ObjectDispatcher : IDlmsPipeline
             string? error = validator.Validate(obj, op);
             if (error != null)
             {
-                return new(CosemError.TypeUnmatched, Diagnostic: error);
+                return new(CosemResultCode.TypeUnmatched, Diagnostic: error);
             }
         }
         catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException or OverflowException)
         {
-            return new(CosemError.TypeUnmatched, Diagnostic: e.Message);
+            return new(CosemResultCode.TypeUnmatched, Diagnostic: e.Message);
         }
 
         var handler = handlers.Resolve(catalog.LogicalDeviceId, obj);
@@ -97,12 +97,12 @@ public sealed class ObjectDispatcher : IDlmsPipeline
                 CosemOperationKind.Read => await handler.ReadAsync(obj, op, ctx, ct).ConfigureAwait(false),
                 CosemOperationKind.Write => await handler.WriteAsync(obj, op, ctx, ct).ConfigureAwait(false),
                 CosemOperationKind.Invoke => await handler.InvokeAsync(obj, op, ctx, ct).ConfigureAwait(false),
-                _ => new(CosemError.OtherReason)
+                _ => new(CosemResultCode.OtherReason)
             };
         }
         catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException or OverflowException)
         {
-            return new(CosemError.TypeUnmatched, Diagnostic: e.Message);
+            return new(CosemResultCode.TypeUnmatched, Diagnostic: e.Message);
         }
         finally
         {

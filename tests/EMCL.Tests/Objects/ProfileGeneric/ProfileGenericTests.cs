@@ -27,7 +27,7 @@ public sealed class ProfileGenericTests
         )
         {
             r.State.Set(2, Number(DlmsType.UInt32, n));
-            Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(d, p, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0))).Error);
+            Assert.Equal(CosemResultCode.Success, (await ExecuteOperationAsync(d, p, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0))).Error);
         }
 
         Assert.Equal(3, ReadStoredValue(p, 2).Items.Length);

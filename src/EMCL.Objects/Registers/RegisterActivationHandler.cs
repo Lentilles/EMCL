@@ -50,7 +50,7 @@ public sealed class RegisterActivationHandler : StoredValueHandler
             var masks = StoredArray(cosemObject, RegisterActivationMembers.Attributes.MaskList);
             var active = ActiveMask(cosemObject);
             var result = Validate(cosemObject, assignments, masks, active);
-            if (result.Error != CosemError.Success)
+            if (result.Error != CosemResultCode.Success)
             {
                 throw new InvalidOperationException(result.Diagnostic ?? "Invalid register activation configuration.");
             }
@@ -96,7 +96,7 @@ public sealed class RegisterActivationHandler : StoredValueHandler
         var masks = operation.Index == RegisterActivationMembers.Attributes.MaskList ? value : StoredArray(cosemObject, RegisterActivationMembers.Attributes.MaskList);
         var active = operation.Index == RegisterActivationMembers.Attributes.ActiveMask ? value : ActiveMask(cosemObject);
         var result = Validate(cosemObject, assignments, masks, active);
-        if (result.Error == CosemError.Success)
+        if (result.Error == CosemResultCode.Success)
         {
             cosemObject.State.Set(operation.Index, value);
         }
@@ -130,7 +130,7 @@ public sealed class RegisterActivationHandler : StoredValueHandler
             var shapeError = RegisterValues.Validate(cosemObject, RegisterActivationMembers.Attributes.MaskList, DlmsValue.Array(value), limits);
             if (shapeError != null)
             {
-                return ValueTask.FromResult(new OperationResult(CosemError.TypeUnmatched, Diagnostic: shapeError));
+                return ValueTask.FromResult(new OperationResult(CosemResultCode.TypeUnmatched, Diagnostic: shapeError));
             }
 
             int position = FindMask(masks, value.Items[RegisterStructures.Mask.Name]);
@@ -141,18 +141,18 @@ public sealed class RegisterActivationHandler : StoredValueHandler
         {
             if (value.Type != DlmsType.OctetString)
             {
-                return ValueTask.FromResult(new OperationResult(CosemError.TypeUnmatched));
+                return ValueTask.FromResult(new OperationResult(CosemResultCode.TypeUnmatched));
             }
 
             int position = FindMask(masks, value);
             if (position < 0)
             {
-                return ValueTask.FromResult(new OperationResult(CosemError.ObjectUndefined));
+                return ValueTask.FromResult(new OperationResult(CosemResultCode.ObjectUndefined));
             }
 
             if (active != null && SameName(active, value))
             {
-                return ValueTask.FromResult(new OperationResult(CosemError.TemporaryFailure,
+                return ValueTask.FromResult(new OperationResult(CosemResultCode.TemporaryFailure,
                     Diagnostic: "Select another mask before deleting the active mask."));
             }
 
@@ -161,7 +161,7 @@ public sealed class RegisterActivationHandler : StoredValueHandler
         }
 
         var result = Validate(cosemObject, assignments, masks, active);
-        if (result.Error == CosemError.Success)
+        if (result.Error == CosemResultCode.Success)
         {
             cosemObject.State.Set(changedIndex, changedIndex == RegisterActivationMembers.Attributes.RegisterAssignment ? assignments : masks);
         }
@@ -176,12 +176,12 @@ public sealed class RegisterActivationHandler : StoredValueHandler
             ?? (active == null ? null : RegisterValues.Validate(cosemObject, RegisterActivationMembers.Attributes.ActiveMask, active, limits));
         if (error != null)
         {
-            return new(CosemError.TypeUnmatched, Diagnostic: error);
+            return new(CosemResultCode.TypeUnmatched, Diagnostic: error);
         }
 
         if (assignments.Items.Length > byte.MaxValue)
         {
-            return new(CosemError.ScopeOfAccessViolated, Diagnostic: "At most 255 register assignments are supported.");
+            return new(CosemResultCode.ScopeOfAccessViolated, Diagnostic: "At most 255 register assignments are supported.");
         }
 
         foreach (var entry in assignments.Items)
@@ -190,12 +190,12 @@ public sealed class RegisterActivationHandler : StoredValueHandler
             var register = catalog.Find(Name(entry));
             if (register == null)
             {
-                return new(CosemError.ObjectUndefined, Diagnostic: "An assigned register is absent from the catalog.");
+                return new(CosemResultCode.ObjectUndefined, Diagnostic: "An assigned register is absent from the catalog.");
             }
 
             if (classId is not (CosemClassIds.Register or CosemClassIds.ExtendedRegister or CosemClassIds.DemandRegister) || register.Descriptor.Key.ClassId != classId)
             {
-                return new(CosemError.ObjectClassInconsistent, Diagnostic: "Only matching Register, Extended Register, and Demand Register references are permitted.");
+                return new(CosemResultCode.ObjectClassInconsistent, Diagnostic: "Only matching Register, Extended Register, and Demand Register references are permitted.");
             }
         }
 
@@ -204,17 +204,17 @@ public sealed class RegisterActivationHandler : StoredValueHandler
         {
             if (!names.Add(Convert.ToHexString(mask.Items[RegisterStructures.Mask.Name].Bytes.AsSpan())))
             {
-                return new(CosemError.TypeUnmatched, Diagnostic: "Mask names must be unique.");
+                return new(CosemResultCode.TypeUnmatched, Diagnostic: "Mask names must be unique.");
             }
 
             if (mask.Items[RegisterStructures.Mask.Indices].Items.Any(index => index.AsUInt64() == 0 || index.AsUInt64() > (ulong)assignments.Items.Length))
             {
-                return new(CosemError.ScopeOfAccessViolated, Diagnostic: "A mask index must name an existing one-based assignment position.");
+                return new(CosemResultCode.ScopeOfAccessViolated, Diagnostic: "A mask index must name an existing one-based assignment position.");
             }
         }
 
         return active != null && FindMask(masks, active) < 0
-            ? new(CosemError.ObjectUndefined, Diagnostic: "The active mask must exist in mask_list.")
+            ? new(CosemResultCode.ObjectUndefined, Diagnostic: "The active mask must exist in mask_list.")
             : OperationResult.Ok();
     }
 

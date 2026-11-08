@@ -7,6 +7,13 @@ namespace EMCL.Framing.Hdlc.Frames;
 /// <summary>Encodes and incrementally decodes HDLC type-3 frames, validating addresses, HCS, FCS, and frame boundaries.</summary>
 public sealed class HdlcCodec : IIncrementalCodec<HdlcFrame>
 {
+    /// <summary>Allows a received frame to end at its validated FCS without a closing flag.</summary>
+    /// <remarks>The opening flag is required. Encoding always writes both flags.</remarks>
+    public bool AllowMissingClosingFlag
+    {
+        get; init;
+    }
+
     /// <inheritdoc />
     public DecodeResult<HdlcFrame> Decode(ReadOnlySequence<byte> input)
     {
@@ -22,20 +29,17 @@ public sealed class HdlcCodec : IIncrementalCodec<HdlcFrame>
             return new(DecodeStatus.InvalidData, Error: "Expected HDLC flag.");
         }
 
-        long start = 0;
         while (reader.TryPeek(out byte next) && next == HdlcFrameFormat.Flag)
         {
             reader.Advance(1);
-            start++;
         }
 
-        if (reader.Remaining < HdlcFrameFormat.FormatFieldLength)
+        Span<byte> format = stackalloc byte[HdlcFrameFormat.FormatFieldLength];
+        if (!reader.TryCopyTo(format))
         {
             return new(DecodeStatus.NeedMoreData);
         }
 
-        Span<byte> format = stackalloc byte[HdlcFrameFormat.FormatFieldLength];
-        input.Slice(start + 1, HdlcFrameFormat.FormatFieldLength).CopyTo(format);
         if ((format[0] & HdlcFrameFormat.FormatTypeMask) != HdlcFrameFormat.FormatType3)
         {
             return new(DecodeStatus.Unsupported, Error: "Only HDLC format type 3 is supported.");
@@ -47,21 +51,31 @@ public sealed class HdlcCodec : IIncrementalCodec<HdlcFrame>
             return new(DecodeStatus.InvalidData, Error: "HDLC frame is too short.");
         }
 
-        if (input.Length < start + length + HdlcFrameFormat.BoundaryFlagsLength)
+        if (reader.Remaining < length)
         {
             return new(DecodeStatus.NeedMoreData);
         }
 
-        byte[] data = input.Slice(start + 1, length + 1).ToArray();
-        if (data[length] != HdlcFrameFormat.Flag)
+        long frameEnd = reader.Consumed + length;
+        if (!AllowMissingClosingFlag)
         {
-            int nearbyStart = Math.Max(0, length - 8);
-            string nearClosing = Convert.ToHexString(data.AsSpan(nearbyStart, length - nearbyStart + 1));
-            return new(DecodeStatus.InvalidData, Error:
-                $"Missing HDLC closing flag at offset {start + length + 1} " +
-                $"(declared length {length}, found {data[length]:X2}, near closing={nearClosing}).");
+            reader.Advance(length);
+            if (!reader.TryPeek(out byte closingFlag))
+            {
+                return new(DecodeStatus.NeedMoreData);
+            }
+
+            if (closingFlag != HdlcFrameFormat.Flag)
+            {
+                int nearbyLength = Math.Min(length, 8);
+                string nearClosing = Convert.ToHexString(input.Slice(frameEnd - nearbyLength, nearbyLength + 1).ToArray());
+                return new(DecodeStatus.InvalidData, Error:
+                    $"Missing HDLC closing flag at offset {frameEnd} " +
+                    $"(declared length {length}, found {closingFlag:X2}, near closing={nearClosing}).");
+            }
         }
 
+        byte[] data = input.Slice(frameEnd - length, length).ToArray();
         int position = HdlcFrameFormat.FormatFieldLength;
         try
         {
@@ -101,8 +115,8 @@ public sealed class HdlcCodec : IIncrementalCodec<HdlcFrame>
                 throw new FormatException("One address must be a one-octet client address.");
             }
 
-            // Retain the closing flag: it may also open the next frame.
-            return DecodeResult<HdlcFrame>.Done(new(destination, source, control, information, (format[0] & HdlcFrameFormat.SegmentationMask) != 0), start + length + 1);
+            // Leave the next octet unread. A closing flag may also open the next frame.
+            return DecodeResult<HdlcFrame>.Done(new(destination, source, control, information, (format[0] & HdlcFrameFormat.SegmentationMask) != 0), frameEnd);
         }
         catch (FormatException e)
         {

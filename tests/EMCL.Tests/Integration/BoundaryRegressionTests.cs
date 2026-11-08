@@ -37,18 +37,18 @@ public sealed class BoundaryRegressionTests
         var custom = new ObjectHandlerOverrides(original).OnRead(2, (obj, op, ctx, ct) => ValueTask.FromResult(OperationResult.Ok(Number(DlmsType.UInt32, 91))));
         d.Handlers.ForInstance("d", r.LogicalName, custom);
         Assert.Equal(91L, (await ExecuteOperationAsync(d, r, CosemOperationKind.Read, 2)).Value!.AsInt64());
-        Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(d, r, CosemOperationKind.Invoke, 1, Number(DlmsType.Int8, 0))).Error);
+        Assert.Equal(CosemResultCode.Success, (await ExecuteOperationAsync(d, r, CosemOperationKind.Invoke, 1, Number(DlmsType.Int8, 0))).Error);
         Assert.Equal(0L, ReadStoredValue(r, 2).AsInt64());
         var p = d.Add(7, 1, LogicalName.Parse("1.0.99.1.0.255"));
         await WriteValueAsync(d, p, 3, DlmsValue.Array(CaptureDefinition(r)));
         await ExecuteOperationAsync(d, p, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0));
-        Assert.Equal(CosemError.TypeUnmatched, (await ExecuteOperationAsync(d, p, CosemOperationKind.Write, 5, Number(DlmsType.Enum, 3))).Error);
+        Assert.Equal(CosemResultCode.TypeUnmatched, (await ExecuteOperationAsync(d, p, CosemOperationKind.Write, 5, Number(DlmsType.Enum, 3))).Error);
         Assert.Equal(1L, ReadStoredValue(p, 5).AsInt64());
         Assert.Equal(1L, ReadStoredValue(p, 7).AsInt64());
         // No partial capture row may be appended when a later source is unavailable.
         var missing = d.Add(1, 0, LogicalName.Parse("0.0.96.1.0.255"));
         await WriteValueAsync(d, p, 3, DlmsValue.Array(CaptureDefinition(r), CaptureDefinition(missing)));
-        Assert.Equal(CosemError.ObjectUnavailable, (await ExecuteOperationAsync(d, p, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0))).Error);
+        Assert.Equal(CosemResultCode.ObjectUnavailable, (await ExecuteOperationAsync(d, p, CosemOperationKind.Invoke, 2, Number(DlmsType.Int8, 0))).Error);
         Assert.Equal(0L, ReadStoredValue(p, 7).AsInt64());
         Assert.Equal(DecodeStatus.InvalidData, new ApduCodec(new()
         {

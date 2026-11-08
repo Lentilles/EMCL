@@ -19,4 +19,8 @@ internal sealed record HdlcFramingSettings : FramingSettings
     public ushort ServerLogicalAddress { get; init; } = HdlcConnectionDefaults.ServerLogicalAddress;
     public ushort? ServerPhysicalAddress { get; init; }
     public bool ExtendedAddress { get; init; }
+    public bool AllowMissingClosingFlag
+    {
+        get; init;
+    }
 }

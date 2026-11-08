@@ -35,7 +35,7 @@ internal static class TestData
     );
     internal static DlmsValue ReadStoredValue(CosemObject o, sbyte index) => o.State.TryGet(index, out var v) ? v : throw new Exception($"Missing {index}");
     internal static ValueTask<OperationResult> ExecuteOperationAsync(EmclDevice d, CosemObject o, CosemOperationKind kind, sbyte index, DlmsValue? value = null, SelectiveAccess? selection = null) => d.Pipeline.ExecuteAsync(new(kind, o.Descriptor.Key.ClassId, o.LogicalName, index, value, selection), d.LocalContext, cancellationToken: TestContext.Current.CancellationToken);
-    internal static async Task WriteValueAsync(EmclDevice d, CosemObject o, sbyte index, DlmsValue value) => Assert.Equal(CosemError.Success, (await ExecuteOperationAsync(d, o, CosemOperationKind.Write, index, value)).Error);
+    internal static async Task WriteValueAsync(EmclDevice d, CosemObject o, sbyte index, DlmsValue value) => Assert.Equal(CosemResultCode.Success, (await ExecuteOperationAsync(d, o, CosemOperationKind.Write, index, value)).Error);
     internal static DlmsValue CaptureDefinition(CosemObject o, sbyte index = 2, ushort dataIndex = 0) => DlmsValue.Structure(Number(DlmsType.UInt16, o.Descriptor.Key.ClassId), DlmsValue.Octets(o.LogicalName.ToBytes()), Number(DlmsType.Int8, index), Number(DlmsType.UInt16, dataIndex));
     internal static async Task AssertReceivedBytesAsync(IApduChannel channel, byte[] expected)
     {
