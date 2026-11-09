@@ -53,7 +53,7 @@ Console.WriteLine(result.Value!.AsUInt64());
 - Association LN v1/v3: catalog import and streaming `object_list` reading.
 - None, LLS, and HLS High (AES-128 challenge-response) authentication.
 - Wrapper and HDLC over TCP, Serial, or a custom transport.
-- Optional HDLC MAX INFO TX/RX negotiation with asymmetric byte limits and separate proposed, received, and effective diagnostics; one-frame windows.
+- Optional HDLC MAX INFO TX/RX negotiation with asymmetric byte limits and separate proposed, received, and effective diagnostics; receive windows of 1–7 frames and a one-frame transmit window.
 - Local Data, Register, Extended Register, Demand Register, Register Activation,
   Clock, Profile Generic, and Association LN, as well as custom classes.
 - Preservation of unknown classes and versions, original DLMS tags, and association rights.

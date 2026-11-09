@@ -1,6 +1,6 @@
 namespace EMCL.Framing.Hdlc.Frames;
 
-/// <summary>Names HDLC control-field values used for link setup and stop-and-wait exchange.</summary>
+/// <summary>Names HDLC control-field values used for link setup and numbered exchange.</summary>
 public static class HdlcControl
 {
     /// <summary>The SNRM command with the poll bit set.</summary>

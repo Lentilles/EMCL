@@ -7,7 +7,7 @@ namespace EMCL.Framing;
 /// <param name="MaximumTransmitInformationBytes">Maximum information bytes sent by the parameter owner.</param>
 /// <param name="MaximumReceiveInformationBytes">Maximum information bytes received by the parameter owner.</param>
 /// <param name="TransmitWindowFrames">Maximum outstanding transmitted frames; the channel supports only one.</param>
-/// <param name="ReceiveWindowFrames">Maximum outstanding received frames; the channel supports only one.</param>
+/// <param name="ReceiveWindowFrames">Maximum outstanding frames received from the peer, from one through seven.</param>
 public sealed record HdlcLinkParameters(
     int MaximumTransmitInformationBytes = HdlcFrameFormat.DefaultInformationLength,
     int MaximumReceiveInformationBytes = HdlcFrameFormat.DefaultInformationLength,
@@ -24,9 +24,7 @@ public sealed record HdlcLinkParameters(
             throw new ArgumentOutOfRangeException(nameof(TransmitWindowFrames), "HDLC stop-and-wait requires a one-frame transmit window.");
         }
 
-        if (ReceiveWindowFrames != 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(ReceiveWindowFrames), "HDLC stop-and-wait requires a one-frame receive window.");
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(ReceiveWindowFrames, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(ReceiveWindowFrames, HdlcFrameFormat.SequenceMask);
     }
 }

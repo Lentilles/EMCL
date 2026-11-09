@@ -20,7 +20,7 @@ public static class HdlcNegotiation
     private const int MaximumWindow = HdlcFrameFormat.SequenceMask;
 
     /// <summary>Encodes all four local parameters; null preserves the legacy empty SNRM information field.</summary>
-    /// <param name="proposed">Local limits in bytes and frames. Only one-frame windows are supported.</param>
+    /// <param name="proposed">Local limits in bytes and frames. TX must be one frame; RX may be one through seven frames.</param>
     /// <returns>An owned immutable parameter group.</returns>
     public static ImmutableArray<byte> CreateSnrmInformation(HdlcLinkParameters? proposed)
     {
@@ -46,7 +46,7 @@ public static class HdlcNegotiation
     /// <param name="proposed">The exact local proposal, or null for an empty SNRM.</param>
     /// <param name="information">The peer's UA information field.</param>
     /// <returns>Separate proposed, received, and effective values, including the original UA bytes.</returns>
-    /// <exception cref="InvalidDataException">The UA is malformed, its windows exceed one frame, or its effective sizes cannot carry LLC.</exception>
+    /// <exception cref="InvalidDataException">The UA is malformed, its windows exceed the local proposal, or its effective sizes cannot carry LLC.</exception>
     public static HdlcNegotiationResult Negotiate(HdlcLinkParameters? proposed, ImmutableArray<byte> information)
     {
         proposed?.ValidateProposal();
@@ -56,14 +56,16 @@ public static class HdlcNegotiation
             received?.MaximumReceiveInformationBytes ?? HdlcFrameFormat.DefaultInformationLength,
             received?.TransmitWindowFrames ?? 1, received?.ReceiveWindowFrames ?? 1);
         var local = proposed ?? new HdlcLinkParameters();
-        if (peer.TransmitWindowFrames != 1 || peer.ReceiveWindowFrames != 1)
+        if (peer.TransmitWindowFrames > local.ReceiveWindowFrames || peer.ReceiveWindowFrames > local.TransmitWindowFrames)
         {
-            throw new InvalidDataException("HDLC UA windows must be one frame for stop-and-wait exchange.");
+            throw new InvalidDataException("HDLC UA windows exceed the local proposal; local TX supports only one frame.");
         }
 
         var effective = new HdlcLinkParameters(
             Math.Min(local.MaximumTransmitInformationBytes, peer.MaximumReceiveInformationBytes),
-            Math.Min(local.MaximumReceiveInformationBytes, peer.MaximumTransmitInformationBytes));
+            Math.Min(local.MaximumReceiveInformationBytes, peer.MaximumTransmitInformationBytes),
+            Math.Min(local.TransmitWindowFrames, peer.ReceiveWindowFrames),
+            Math.Min(local.ReceiveWindowFrames, peer.TransmitWindowFrames));
         if (effective.MaximumTransmitInformationBytes < LlcHeader.Length
             || effective.MaximumReceiveInformationBytes < LlcHeader.Length)
         {

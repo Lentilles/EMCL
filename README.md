@@ -273,7 +273,7 @@ var apdu = await endpoint.ReceiveAsync();
 
 For HDLC, replace only `Framing` with `new ApduFraming.Hdlc(HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(5))`. The channel performs SNRM/UA setup, tracks sequence numbers, acknowledges incoming segments with RR, and sends DISC on disposal. Each outgoing APDU must fit a single negotiated information frame. `HdlcCodec` and `HdlcApduAdapter` are available for low-level frame control.
 
-HDLC information sizes can be proposed explicitly while keeping stop-and-wait windows at one frame:
+HDLC information sizes and the receive window can be proposed explicitly:
 
 ```csharp
 var framing = new ApduFraming.Hdlc(
@@ -281,7 +281,10 @@ var framing = new ApduFraming.Hdlc(
 {
     LinkParameters = new HdlcLinkParameters(
         MaximumTransmitInformationBytes: 571,
-        MaximumReceiveInformationBytes: 1024),
+        MaximumReceiveInformationBytes: 1024,
+        ReceiveWindowFrames: 4),
+    InformationFrameRetryCount = 1,
+    AcknowledgementTimeout = TimeSpan.FromSeconds(2),
     NegotiationObserver = result =>
     {
         // Proposed: local SNRM; Received: peer-direction UA; Effective: local directions.
@@ -302,14 +305,29 @@ defaults as peer-reported values. `UaInformation` preserves the exact bytes.
 `HdlcApduChannel.Negotiation` exposes the latest snapshot; the observer also works through
 `ApduChannels.ConnectAsync` and is called again if a parameterized UA replaces an initial empty UA during setup.
 The replacement cannot reduce TX below the size of a frame already sent. Incoming I/UI frames exceeding effective RX fail the link.
-Both proposed windows must be one frame, and UA windows larger than one are rejected.
+`TransmitWindowFrames` must remain one; `ReceiveWindowFrames` accepts 1–7 and defaults to one.
+UA TX selects the local RX window; UA RX selects the local TX window. A UA window above its matching local proposal is rejected.
+With RX > 1, the peer may send a burst of frames: the client acknowledges a continued segmented response with RR
+when the peer sets Final, including bursts shorter than the window. Replayed frames are suppressed using a bounded history;
+a sequence gap preserves the accepted prefix and requests the missing sequence after Final. Exceeding the negotiated
+number of outstanding received frames faults the link. Complete APDUs received before Final are buffered until the turn ends.
+UI notifications remain independent and may be delivered between numbered segments.
+
 Window sizes count frames; `AcknowledgementTimeout` separately controls the recovery timer.
-Larger information fields do not change `LnAssociationOptions.MaxReceivePduSize`, add outgoing HDLC segmentation,
-or enable a sliding window. An outgoing APDU plus LLC must still fit one effective TX frame.
+For RX > 1 and `InformationFrameRetryCount > 0`, every error-free non-final response frame restarts the receive timer.
+Silence during a burst or after its continuation poll triggers another RR with the next expected sequence, without replaying
+the application request. Accepted new data resets the receive retry budget; exhausted recovery faults the link.
+With retries disabled, a lost Final or continuation poll requires the application's receive deadline to terminate the wait.
+Keep a receive loop active while a concurrent `SendAsync` waits for the preceding frame's acknowledgement or the peer's Final;
+`DlmsClientSession` already does this. Canceling or failing a windowed receive requires a new connection and releases waiting senders.
+
+These settings do not change `LnAssociationOptions.MaxReceivePduSize`, add outgoing HDLC segmentation,
+or enable a larger transmit window. An outgoing APDU plus LLC must still fit one effective TX frame.
 
 Set `InformationFrameRetryCount = 1` and an `AcknowledgementTimeout` on `ApduFraming.Hdlc` to enable one recovery attempt per unacknowledged outgoing I-frame. After the timeout, the channel polls with RR. It sends the same information and send sequence again only if the peer's final RR still expects that sequence. The default retry count is zero. Choose an acknowledgement timeout that allows the initial wait, the recovery poll, and a possible replay within the session's `RequestTimeout`. When enabled, this policy also handles AARQ in place of `ClientSessionOptions.AssociationRetryDelay`. A link that exhausts recovery requires a new connection.
 
-`LinkObserver` reports checksum failures, timeout polls, and I-frame retransmissions. The channel discards frames with bad HCS/FCS and resumes at a validated frame boundary. RNR, REJ, and link reset responses end the exchange with an error.
+`LinkObserver` reports checksum failures, timeout polls, I-frame retransmissions, discarded out-of-order receive frames,
+and receive-window recovery polls. The channel discards frames with bad HCS/FCS and resumes at a validated frame boundary. RNR, REJ, and link reset responses end the exchange with an error.
 
 For a meter that omits the closing `0x7E`, set `AllowMissingClosingFlag = true` on `ApduFraming.Hdlc`. The receiver still requires the opening flag, the declared frame length, and valid HCS/FCS. Outgoing frames include both flags.
 

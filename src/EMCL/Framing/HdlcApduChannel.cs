@@ -10,11 +10,13 @@ using EMCL.Transport.Streams;
 namespace EMCL.Framing;
 
 /// <summary>Maintains a client HDLC link and exchanges complete APDUs over an application-supplied byte transport.</summary>
-/// <remarks>Uses stop-and-wait sequencing, SNRM/UA setup, receive-ready acknowledgements, and DISC on disposal.
+/// <remarks>Uses stop-and-wait transmission, negotiated receive windows of one through seven frames, SNRM/UA setup,
+/// receive-ready acknowledgements, and DISC on disposal.
 /// Outgoing APDUs must fit one negotiated information frame. Automatic recovery of unacknowledged I-frames is opt-in.
 /// A bounded number of SNRM/UA duplicates are tolerated before the first data response.
 /// An initial empty UA may be followed by one UA with valid negotiation parameters.
 /// A later UA makes the link state uncertain and requires a new connection.
+/// For RX windows above one, keep receiving while a concurrent send waits for acknowledgement or the end of the peer's turn.
 /// Use one reader at a time and dispose after active operations complete.</remarks>
 public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmission
 {
@@ -170,6 +172,21 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
             }
             throw;
         }
+        catch (Exception) when (Negotiation.Effective.ReceiveWindowFrames > 1)
+        {
+            await writeLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                linkFailure ??= "stage=HDLC receive; the windowed receive failed. Establish a new HDLC connection.";
+                SignalPendingChanged();
+            }
+            finally
+            {
+                writeLock.Release();
+            }
+
+            throw;
+        }
     }
 
     private async ValueTask<ReadOnlyMemory<byte>?> ReceiveCoreAsync(CancellationToken cancellationToken)
@@ -178,6 +195,11 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!awaitingReceiveFinal && completedWindowApdus.TryDequeue(out var completed))
+            {
+                return completed;
+            }
+
             var frame = setupNotifications.TryDequeue(out var buffered)
                 ? buffered
                 : await ReadFrameAsync(cancellationToken).ConfigureAwait(false);
@@ -190,6 +212,7 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
 
             if (frame.IsUnnumberedInformation)
             {
+                await ObserveWindowedUiFrameAsync(frame, cancellationToken).ConfigureAwait(false);
                 // UI traffic is independent of the numbered exchange, including AARQ retry state.
                 return dataAdapter.Accept(frame with
                 {
@@ -254,6 +277,11 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
     private async ValueTask<ReadOnlyMemory<byte>?> AcceptInformationFrameAsync(HdlcApduAdapter dataAdapter,
         HdlcFrame frame, CancellationToken cancellationToken)
     {
+        if (Negotiation.Effective.ReceiveWindowFrames > 1)
+        {
+            return await AcceptWindowedInformationFrameAsync(dataAdapter, frame, cancellationToken).ConfigureAwait(false);
+        }
+
         if (lastReceivedInformation is { } previous && frame.SendSequence == previous.SendSequence
             && frame.Segmented == previous.Segmented && frame.Information.AsSpan().SequenceEqual(previous.Information.AsSpan()))
         {
@@ -292,6 +320,12 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
     }
 
     private async ValueTask AcceptSupervisoryFrameAsync(HdlcFrame frame, CancellationToken cancellationToken)
+    {
+        await AcceptSupervisoryFrameCoreAsync(frame, cancellationToken).ConfigureAwait(false);
+        await ObserveWindowedSupervisoryFrameAsync(frame, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask AcceptSupervisoryFrameCoreAsync(HdlcFrame frame, CancellationToken cancellationToken)
     {
         switch (frame.Control & HdlcControl.SupervisoryTypeMask)
         {
@@ -334,7 +368,7 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
                 try
                 {
                     EnsureLinkAvailable();
-                    if (pendingInformation is null)
+                    if (pendingInformation is null && !awaitingReceiveFinal)
                     {
                         var frame = FrameApdu(apdu);
                         startedWrite = true;
@@ -392,18 +426,20 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
 
     private void TrackInformationFrame(HdlcFrame frame, ReadOnlyMemory<byte> apdu, CancellationToken cancellationToken)
     {
+        receiveExchangeToken = cancellationToken;
+        receiveFramesSinceAcknowledgement = 0;
         if (awaitingFirstDataResponse)
         {
             maximumSetupInformationSent = Math.Max(maximumSetupInformationSent, frame.Information.Length);
         }
 
-        if (recoveryLifetime is not null)
+        if (recoveryLifetime is not null || Negotiation.Effective.ReceiveWindowFrames > 1)
         {
             pendingInformation = new(frame, cancellationToken);
             SignalPendingChanged();
         }
 
-        else if (nextSendSequence == 1 && awaitingFirstDataResponse && firstDataFrame is null
+        if (recoveryLifetime is null && nextSendSequence == 1 && awaitingFirstDataResponse && firstDataFrame is null
             && !apdu.IsEmpty && apdu.Span[0] == (byte)AcseKind.Aarq)
         {
             firstDataFrame = frame;

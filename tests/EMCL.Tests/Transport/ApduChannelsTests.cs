@@ -82,6 +82,7 @@ public sealed class ApduChannelsTests
     [InlineData(128, 2031, 1, 1)]
     [InlineData(128, 128, 2, 1)]
     [InlineData(128, 128, 1, 0)]
+    [InlineData(128, 128, 1, 8)]
     public async Task InvalidHdlcProposalDoesNotOpenTransport(int transmit, int receive, int windowTx, int windowRx)
     {
         var factory = new RecordingFactory(new RecordingTransport());

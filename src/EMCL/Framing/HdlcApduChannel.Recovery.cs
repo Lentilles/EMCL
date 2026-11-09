@@ -22,8 +22,14 @@ public sealed partial class HdlcApduChannel
         public HdlcFrame Frame { get; } = frame;
         public CancellationToken CancellationToken { get; } = cancellationToken;
         public long LastTransmission { get; set; } = Stopwatch.GetTimestamp();
-        public int Attempts { get; set; }
-        public bool AwaitingPollResponse { get; set; }
+        public int Attempts
+        {
+            get; set;
+        }
+        public bool AwaitingPollResponse
+        {
+            get; set;
+        }
     }
 
     private CancellationTokenSource? LinkRecoveryToken(CancellationToken cancellationToken) =>
@@ -87,6 +93,17 @@ public sealed partial class HdlcApduChannel
                             delay = acknowledgementTimeout;
                         }
                     }
+                    else if (receiveResponseWait is { } response)
+                    {
+                        exchangeToken = response.CancellationToken;
+                        exchangeToken.ThrowIfCancellationRequested();
+                        delay = acknowledgementTimeout - Stopwatch.GetElapsedTime(response.LastActivity);
+                        if (delay <= TimeSpan.Zero)
+                        {
+                            await PollReceiveResponseAsync(response).ConfigureAwait(false);
+                            delay = acknowledgementTimeout;
+                        }
+                    }
 
                     changed = pendingChanged.Task;
                 }
@@ -140,6 +157,7 @@ public sealed partial class HdlcApduChannel
         var poll = new HdlcFrame(remote, local, HdlcControl.CreateReceiveReady(nextReceiveSequence), []);
         await WriteRecoveryFrameAsync(poll, pending,
             new HdlcLinkEvent.RecoveryPoll(pending.Frame.SendSequence, pending.Attempts), recoveryToken).ConfigureAwait(false);
+        receiveFramesSinceAcknowledgement = 0;
     }
 
     private async Task RetransmitAsync(PendingInformation pending, CancellationToken cancellationToken)
@@ -147,7 +165,10 @@ public sealed partial class HdlcApduChannel
         pending.AwaitingPollResponse = false;
         byte control = (byte)(pending.Frame.SendSequence << HdlcFrameFormat.SendSequenceShift
             | nextReceiveSequence << HdlcFrameFormat.ReceiveSequenceShift | HdlcFrameFormat.PollFinalMask);
-        await WriteRecoveryFrameAsync(pending.Frame with { Control = control }, pending,
+        await WriteRecoveryFrameAsync(pending.Frame with
+        {
+            Control = control
+        }, pending,
             new HdlcLinkEvent.Retransmission(pending.Frame.SendSequence, pending.Attempts), cancellationToken).ConfigureAwait(false);
         SignalPendingChanged();
     }
@@ -172,6 +193,14 @@ public sealed partial class HdlcApduChannel
         pending.LastTransmission = Stopwatch.GetTimestamp();
     }
 
-    private Task WriteReceiveReadyAsync(CancellationToken cancellationToken) =>
-        WriteFrameCoreAsync(new(remote, local, HdlcControl.CreateReceiveReady(nextReceiveSequence), []), cancellationToken);
+    private async Task WriteReceiveReadyAsync(CancellationToken cancellationToken)
+    {
+        await WriteFrameCoreAsync(new(remote, local, HdlcControl.CreateReceiveReady(nextReceiveSequence), []), cancellationToken)
+            .ConfigureAwait(false);
+        receiveFramesSinceAcknowledgement = 0;
+        if (Negotiation.Effective.ReceiveWindowFrames > 1 && (adapter!.HasPending || receiveSequenceError || awaitingReceiveFinal))
+        {
+            WaitForReceiveFinal(progress: false);
+        }
+    }
 }

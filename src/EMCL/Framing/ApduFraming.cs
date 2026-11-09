@@ -30,7 +30,7 @@ public abstract record ApduFraming
         Action<HdlcFrame, bool>? FrameObserver = null) : ApduFraming
     {
         /// <summary>Optional local SNRM proposal. Null preserves empty SNRM and 128-byte defaults.
-        /// Sizes include LLC bytes; both windows must be one frame. This does not change DLMS PDU limits
+        /// Sizes include LLC bytes; TX window must be one frame, RX window may be one through seven frames. This does not change DLMS PDU limits
         /// or enable outgoing HDLC segmentation.</summary>
         public HdlcLinkParameters? LinkParameters
         {
@@ -55,13 +55,16 @@ public abstract record ApduFraming
             get; init;
         }
 
-        /// <summary>Maximum recovery attempts per unacknowledged I-frame. Zero disables automatic recovery.</summary>
+        /// <summary>Maximum recovery attempts per unacknowledged I-frame or stalled receive window.
+        /// Zero disables timed recovery.</summary>
         public int InformationFrameRetryCount
         {
             get; init;
         }
 
-        /// <summary>Time to wait for acknowledgement before polling the peer or reporting exhausted recovery.</summary>
+        /// <summary>Time to wait for acknowledgement before polling the peer or reporting exhausted recovery.
+        /// For a negotiated RX window above one, also bounds silence while receiving a response burst or waiting for its continuation.
+        /// Recovery remains opt-in through <see cref="InformationFrameRetryCount"/>.</summary>
         public TimeSpan AcknowledgementTimeout { get; init; } = TimeSpan.FromSeconds(1);
 
         /// <summary>Optional observer of discarded frames and recovery attempts.</summary>

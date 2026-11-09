@@ -85,7 +85,7 @@ public sealed class HdlcNegotiationTests
     [InlineData(128, -1, 1, 1)]
     [InlineData(128, 2031, 1, 1)]
     [InlineData(128, 128, 0, 1)]
-    [InlineData(128, 128, 1, 2)]
+    [InlineData(128, 128, 1, 8)]
     public void RejectsUnsupportedLocalParameters(int transmit, int receive, int windowTx, int windowRx)
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -105,5 +105,45 @@ public sealed class HdlcNegotiationTests
     {
         Assert.Throws<InvalidDataException>(() =>
             HdlcNegotiation.Negotiate(new(1024, 1024), [.. Convert.FromHexString(hex)]));
+    }
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 2)]
+    [InlineData(3, 2)]
+    [InlineData(4, 4)]
+    [InlineData(5, 3)]
+    [InlineData(6, 6)]
+    [InlineData(7, 7)]
+    public void NegotiatesReceiveWindowInPeerTransmitDirection(int offered, int accepted)
+    {
+        byte[] ua = Convert.FromHexString("818012050180060180070400000001080400000001");
+        ua[14] = (byte)accepted;
+        var result = HdlcNegotiation.Negotiate(new(ReceiveWindowFrames: offered), [.. ua]);
+        Assert.Equal(1, result.Effective.TransmitWindowFrames);
+        Assert.Equal(accepted, result.Effective.ReceiveWindowFrames);
+        Assert.Equal(accepted, result.Received!.TransmitWindowFrames);
+        Assert.Equal(1, result.Received.ReceiveWindowFrames);
+    }
+
+    [Fact]
+    public void SnrmAdvertisesReceiveWindowAndPreservesDefaultWhenUaOmitsIt()
+    {
+        var proposed = new HdlcLinkParameters(ReceiveWindowFrames: 7);
+        Assert.Equal(Convert.FromHexString("818012050180060180070400000001080400000007"),
+            HdlcNegotiation.CreateSnrmInformation(proposed).ToArray());
+        Assert.Equal(1, HdlcNegotiation.Negotiate(proposed, []).Effective.ReceiveWindowFrames);
+        Assert.Equal(1, HdlcNegotiation.Negotiate(proposed,
+            [.. Convert.FromHexString("818003060140")]).Effective.ReceiveWindowFrames);
+    }
+
+    [Theory]
+    [InlineData(1, "818006070400000002")]
+    [InlineData(3, "818006070400000004")]
+    [InlineData(7, "818006070400000008")]
+    [InlineData(7, "818006080400000002")]
+    public void RejectsUaWindowAboveProposalOrUnsupportedLocalTransmission(int offered, string hex)
+    {
+        Assert.Throws<InvalidDataException>(() => HdlcNegotiation.Negotiate(new(ReceiveWindowFrames: offered),
+            [.. Convert.FromHexString(hex)]));
     }
 }

@@ -3,7 +3,9 @@ namespace EMCL.Framing;
 /// <summary>Reports HDLC frame rejection and automatic recovery independently of the frame trace.</summary>
 public abstract record HdlcLinkEvent
 {
-    private protected HdlcLinkEvent() { }
+    private protected HdlcLinkEvent()
+    {
+    }
 
     /// <summary>A frame was discarded after a checksum failure.</summary>
     /// <param name="Error">The checksum diagnostic.</param>
@@ -18,4 +20,14 @@ public abstract record HdlcLinkEvent
     /// <param name="SendSequence">The send sequence of the retransmitted I-frame.</param>
     /// <param name="Attempt">The one-based recovery attempt number.</param>
     public sealed record Retransmission(byte SendSequence, int Attempt) : HdlcLinkEvent;
+
+    /// <summary>The receive-response timer expired and the client requested continuation with RR.</summary>
+    /// <param name="ReceiveSequence">The next expected peer send sequence, modulo eight.</param>
+    /// <param name="Attempt">The one-based recovery attempt number.</param>
+    public sealed record ReceiveRecoveryPoll(byte ReceiveSequence, int Attempt) : HdlcLinkEvent;
+
+    /// <summary>An out-of-order incoming I-frame was discarded while retaining the correctly received prefix.</summary>
+    /// <param name="ExpectedSequence">The next expected peer send sequence.</param>
+    /// <param name="ReceivedSequence">The discarded frame's send sequence.</param>
+    public sealed record ReceiveSequenceError(byte ExpectedSequence, byte ReceivedSequence) : HdlcLinkEvent;
 }
