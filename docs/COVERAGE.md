@@ -39,6 +39,7 @@
 | Client Profile Generic reading | Streaming array and compact-array buffer rows from normal and block GET responses, with selective access and progress |
 | Client notifications | Separate bounded stream of negotiated DataNotification messages; overflow terminates the session |
 | Deadlines and cancellation | Cover the entire exchange; cancellation after a send attempt faults the association, while queue waiting is canceled separately |
+| HDLC size negotiation | Optional SNRM MAX INFO TX/RX proposals (3–2030 bytes including LLC); asymmetric UA limits, separate proposed/received/effective snapshots, incoming I/UI size enforcement; windows fixed at one frame |
 | HDLC recovery | Optional RR polling and I-frame replay after an acknowledgement timeout, checksum recovery and duplicate suppression |
 | Ready-to-use server session, full HDLC link management | Future work |
 | ACTION block transfer, GBT, APDU list variants | Future work; Unsupported during decoding |

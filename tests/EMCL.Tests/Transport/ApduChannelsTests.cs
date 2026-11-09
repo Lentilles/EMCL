@@ -77,9 +77,29 @@ public sealed class ApduChannelsTests
         Assert.Equal(0, factory.ConnectCount);
     }
 
+    [Theory]
+    [InlineData(2, 128, 1, 1)]
+    [InlineData(128, 2031, 1, 1)]
+    [InlineData(128, 128, 2, 1)]
+    [InlineData(128, 128, 1, 0)]
+    public async Task InvalidHdlcProposalDoesNotOpenTransport(int transmit, int receive, int windowTx, int windowRx)
+    {
+        var factory = new RecordingFactory(new RecordingTransport());
+        var framing = new ApduFraming.Hdlc(HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(1))
+        {
+            LinkParameters = new(transmit, receive, windowTx, windowRx)
+        };
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+            await ApduChannels.ConnectAsync(new(factory, framing), TestContext.Current.CancellationToken));
+        Assert.Equal(0, factory.ConnectCount);
+    }
+
     private sealed class RecordingFactory(IByteTransport transport) : IByteTransportFactory
     {
-        public int ConnectCount { get; private set; }
+        public int ConnectCount
+        {
+            get; private set;
+        }
 
         public ValueTask<IByteTransport> ConnectAsync(CancellationToken cancellationToken = default)
         {
@@ -91,7 +111,10 @@ public sealed class ApduChannelsTests
     private sealed class RecordingTransport : IByteTransport
     {
         public List<byte> Written { get; } = [];
-        public int DisposeCount { get; private set; }
+        public int DisposeCount
+        {
+            get; private set;
+        }
 
         public ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(0);

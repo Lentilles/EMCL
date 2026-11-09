@@ -5,7 +5,9 @@ namespace EMCL.Framing;
 /// <summary>Configures how a byte transport carries complete application PDUs.</summary>
 public abstract record ApduFraming
 {
-    private protected ApduFraming() { }
+    private protected ApduFraming()
+    {
+    }
 
     /// <summary>Uses DLMS Wrapper framing with the supplied wPorts.</summary>
     /// <param name="LocalPort">The local Wrapper wPort.</param>
@@ -13,7 +15,10 @@ public abstract record ApduFraming
     public sealed record Wrapper(ushort LocalPort, ushort RemotePort) : ApduFraming
     {
         /// <summary>Gets an optional additional local wPort for incoming DataNotification messages.</summary>
-        public ushort? NotificationPort { get; init; }
+        public ushort? NotificationPort
+        {
+            get; init;
+        }
     }
 
     /// <summary>Uses an HDLC client link with the supplied addresses and setup timeout.</summary>
@@ -24,8 +29,25 @@ public abstract record ApduFraming
     public sealed record Hdlc(HdlcAddress Local, HdlcAddress Remote, TimeSpan LinkTimeout,
         Action<HdlcFrame, bool>? FrameObserver = null) : ApduFraming
     {
+        /// <summary>Optional local SNRM proposal. Null preserves empty SNRM and 128-byte defaults.
+        /// Sizes include LLC bytes; both windows must be one frame. This does not change DLMS PDU limits
+        /// or enable outgoing HDLC segmentation.</summary>
+        public HdlcLinkParameters? LinkParameters
+        {
+            get; init;
+        }
+
+        /// <summary>Optional callback with each accepted negotiation snapshot, including a replacement UA during setup.</summary>
+        public Action<HdlcNegotiationResult>? NegotiationObserver
+        {
+            get; init;
+        }
+
         /// <summary>Gets an optional additional client address for incoming UI frames carrying DataNotification.</summary>
-        public HdlcAddress? NotificationAddress { get; init; }
+        public HdlcAddress? NotificationAddress
+        {
+            get; init;
+        }
 
         /// <summary>Allows incoming frames with a valid FCS to omit the closing flag. Defaults to false.</summary>
         public bool AllowMissingClosingFlag
@@ -34,16 +56,23 @@ public abstract record ApduFraming
         }
 
         /// <summary>Maximum recovery attempts per unacknowledged I-frame. Zero disables automatic recovery.</summary>
-        public int InformationFrameRetryCount { get; init; }
+        public int InformationFrameRetryCount
+        {
+            get; init;
+        }
 
         /// <summary>Time to wait for acknowledgement before polling the peer or reporting exhausted recovery.</summary>
         public TimeSpan AcknowledgementTimeout { get; init; } = TimeSpan.FromSeconds(1);
 
         /// <summary>Optional observer of discarded frames and recovery attempts.</summary>
-        public Action<HdlcLinkEvent>? LinkObserver { get; init; }
+        public Action<HdlcLinkEvent>? LinkObserver
+        {
+            get; init;
+        }
 
         internal void Validate()
         {
+            LinkParameters?.ValidateProposal();
             if (LinkTimeout <= TimeSpan.Zero || LinkTimeout.TotalMilliseconds > uint.MaxValue - 1)
             {
                 throw new ArgumentOutOfRangeException(nameof(LinkTimeout));

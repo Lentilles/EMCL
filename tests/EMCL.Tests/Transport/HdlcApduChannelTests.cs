@@ -466,7 +466,8 @@ public sealed partial class HdlcApduChannelTests
         Func<IApduChannel, Task> verify, Action<HdlcFrame, bool>? observer = null,
         HdlcAddress? configuredRemote = null, bool allowMissingClosingFlag = false,
         HdlcAddress? notificationAddress = null, TimeSpan? acknowledgementTimeout = null,
-        Action<HdlcLinkEvent>? linkObserver = null)
+        Action<HdlcLinkEvent>? linkObserver = null, HdlcLinkParameters? linkParameters = null,
+        Action<HdlcNegotiationResult>? negotiationObserver = null, Action<HdlcFrame>? inspectSnrm = null)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -481,7 +482,9 @@ public sealed partial class HdlcApduChannelTests
                 NotificationAddress = notificationAddress,
                 InformationFrameRetryCount = acknowledgementTimeout.HasValue ? 1 : 0,
                 AcknowledgementTimeout = acknowledgementTimeout ?? TimeSpan.FromSeconds(1),
-                LinkObserver = linkObserver
+                LinkObserver = linkObserver,
+                LinkParameters = linkParameters,
+                NegotiationObserver = negotiationObserver
             });
         try
         {
@@ -502,6 +505,12 @@ public sealed partial class HdlcApduChannelTests
             Assert.Equal(HdlcControl.Snrm, snrm.Control);
             Assert.Equal(remote, snrm.Destination);
             Assert.Equal(local, snrm.Source);
+            if (linkParameters is null)
+            {
+                Assert.Empty(snrm.Information);
+            }
+
+            inspectSnrm?.Invoke(snrm);
             await serve(stream, codec, local, remote);
         }
     }
@@ -511,7 +520,10 @@ public sealed partial class HdlcApduChannelTests
 
     private sealed class SingleTransportFactory(IByteTransport transport) : IByteTransportFactory
     {
-        public int ConnectCount { get; private set; }
+        public int ConnectCount
+        {
+            get; private set;
+        }
 
         public ValueTask<IByteTransport> ConnectAsync(CancellationToken cancellationToken = default)
         {

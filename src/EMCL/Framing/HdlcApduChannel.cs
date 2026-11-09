@@ -29,6 +29,10 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
     private readonly HdlcAddress? notificationAddress;
     private readonly Action<HdlcFrame, bool>? frameObserver;
     private readonly Action<HdlcLinkEvent>? linkObserver;
+    private readonly HdlcLinkParameters? proposedParameters;
+    private readonly Action<HdlcNegotiationResult>? negotiationObserver;
+    private HdlcNegotiationResult? negotiation;
+    private int maximumSetupInformationSent;
     private readonly SemaphoreSlim writeLock = new(1, 1);
     private readonly byte[] input = new byte[HdlcFrameFormat.MaximumFrameLength + HdlcFrameFormat.BoundaryFlagsLength];
     private readonly Queue<HdlcFrame> setupNotifications = new();
@@ -54,6 +58,8 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
         notificationAddress = framing.NotificationAddress;
         frameObserver = framing.FrameObserver;
         linkObserver = framing.LinkObserver;
+        proposedParameters = framing.LinkParameters;
+        negotiationObserver = framing.NegotiationObserver;
         retryCount = framing.InformationFrameRetryCount;
         acknowledgementTimeout = framing.AcknowledgementTimeout;
         if (retryCount > 0)
@@ -67,6 +73,11 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
             AllowMissingClosingFlag = framing.AllowMissingClosingFlag
         };
     }
+
+    /// <summary>Gets the latest accepted SNRM/UA snapshot. Effective directions are local; received directions are the peer's.
+    /// The snapshot can change when a parameterized UA replaces an empty UA before the first data response.</summary>
+    public HdlcNegotiationResult Negotiation => Volatile.Read(ref negotiation)
+        ?? throw new InvalidOperationException("The HDLC link is not established.");
 
     /// <summary>Establishes an HDLC link and returns a channel that owns the supplied transport.</summary>
     /// <param name="transport">An already open byte transport.</param>
@@ -108,12 +119,19 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
             deadline.CancelAfter(framing.LinkTimeout);
             try
             {
-                await channel.WriteFrameAsync(new(remote, local, HdlcControl.Snrm, []), deadline.Token);
+                await channel.WriteFrameAsync(new(remote, local, HdlcControl.Snrm,
+                    HdlcNegotiation.CreateSnrmInformation(framing.LinkParameters)), deadline.Token);
                 var response = await channel.WaitForUaAsync(deadline.Token);
 
-                int maximumInformation = HdlcNegotiation.MaximumOutgoingInformation(response.Information);
+                if (response.Segmented)
+                {
+                    throw new InvalidDataException("HDLC UA must not be segmented.");
+                }
+
+                var result = HdlcNegotiation.Negotiate(framing.LinkParameters, response.Information);
                 channel.setupUa = response;
-                channel.adapter = new(local, remote, maxInformationBytes: maximumInformation, limits: limits);
+                channel.adapter = new(local, remote, maxInformationBytes: result.Effective.MaximumTransmitInformationBytes, limits: limits);
+                channel.SetNegotiation(result);
                 if (channel.recoveryLifetime is not null)
                 {
                     channel.recoveryTask = channel.RunRecoveryAsync();
@@ -164,10 +182,20 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
                 ? buffered
                 : await ReadFrameAsync(cancellationToken).ConfigureAwait(false);
             ValidateAddresses(frame);
+            if ((frame.IsInformation || frame.IsUnnumberedInformation)
+                && frame.Information.Length > Negotiation.Effective.MaximumReceiveInformationBytes)
+            {
+                FailLink($"HDLC information field contains {frame.Information.Length} bytes, exceeding the negotiated receive limit of {Negotiation.Effective.MaximumReceiveInformationBytes} bytes");
+            }
+
             if (frame.IsUnnumberedInformation)
             {
                 // UI traffic is independent of the numbered exchange, including AARQ retry state.
-                return dataAdapter.Accept(frame with { Destination = local, Source = remote });
+                return dataAdapter.Accept(frame with
+                {
+                    Destination = local,
+                    Source = remote
+                });
             }
 
             if (frame.Control == HdlcControl.Ua)
@@ -364,6 +392,11 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
 
     private void TrackInformationFrame(HdlcFrame frame, ReadOnlyMemory<byte> apdu, CancellationToken cancellationToken)
     {
+        if (awaitingFirstDataResponse)
+        {
+            maximumSetupInformationSent = Math.Max(maximumSetupInformationSent, frame.Information.Length);
+        }
+
         if (recoveryLifetime is not null)
         {
             pendingInformation = new(frame, cancellationToken);
@@ -492,31 +525,37 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
                 return false;
             }
 
-            int maximumInformation;
+            HdlcNegotiationResult result;
             try
             {
-                maximumInformation = HdlcNegotiation.MaximumOutgoingInformation(frame.Information);
+                result = HdlcNegotiation.Negotiate(proposedParameters, frame.Information);
             }
             catch (InvalidDataException)
             {
                 return false;
             }
 
-            if (maximumInformation < LlcHeader.Length
-                || (pendingInformation?.Frame ?? firstDataFrame) is { } first && first.Information.Length > maximumInformation)
+            if (maximumSetupInformationSent > result.Effective.MaximumTransmitInformationBytes)
             {
                 return false;
             }
 
-            adapter!.SetMaximumInformationBytes(maximumInformation);
+            adapter!.SetMaximumInformationBytes(result.Effective.MaximumTransmitInformationBytes);
             setupUa = frame;
             duplicateUaFrames++;
+            SetNegotiation(result);
             return true;
         }
         finally
         {
             writeLock.Release();
         }
+    }
+
+    private void SetNegotiation(HdlcNegotiationResult result)
+    {
+        Volatile.Write(ref negotiation, result);
+        negotiationObserver?.Invoke(result);
     }
 
     private async Task<HdlcFrame> ReadFrameAsync(CancellationToken cancellationToken)

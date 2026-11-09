@@ -273,6 +273,40 @@ var apdu = await endpoint.ReceiveAsync();
 
 For HDLC, replace only `Framing` with `new ApduFraming.Hdlc(HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(5))`. The channel performs SNRM/UA setup, tracks sequence numbers, acknowledges incoming segments with RR, and sends DISC on disposal. Each outgoing APDU must fit a single negotiated information frame. `HdlcCodec` and `HdlcApduAdapter` are available for low-level frame control.
 
+HDLC information sizes can be proposed explicitly while keeping stop-and-wait windows at one frame:
+
+```csharp
+var framing = new ApduFraming.Hdlc(
+    HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(5))
+{
+    LinkParameters = new HdlcLinkParameters(
+        MaximumTransmitInformationBytes: 571,
+        MaximumReceiveInformationBytes: 1024),
+    NegotiationObserver = result =>
+    {
+        // Proposed: local SNRM; Received: peer-direction UA; Effective: local directions.
+        Console.WriteLine($"HDLC TX={result.Effective.MaximumTransmitInformationBytes} bytes, "
+            + $"RX={result.Effective.MaximumReceiveInformationBytes} bytes, "
+            + $"TX window={result.Effective.TransmitWindowFrames} frames, "
+            + $"RX window={result.Effective.ReceiveWindowFrames} frames");
+    }
+};
+```
+
+`LinkParameters = null` is the default: SNRM has no information field and local size ceilings are 128 bytes.
+Explicit sizes must be 3–2030 bytes, including the LLC header (3 bytes per complete APDU).
+Local TX is the smaller of proposed TX and UA RX; local RX is the smaller of proposed RX and UA TX.
+An empty UA or an omitted parameter uses the protocol default (128 bytes, one frame), even when larger sizes were proposed.
+`Received` is null for an empty UA; its nullable properties preserve omitted individual parameters without displaying
+defaults as peer-reported values. `UaInformation` preserves the exact bytes.
+`HdlcApduChannel.Negotiation` exposes the latest snapshot; the observer also works through
+`ApduChannels.ConnectAsync` and is called again if a parameterized UA replaces an initial empty UA during setup.
+The replacement cannot reduce TX below the size of a frame already sent. Incoming I/UI frames exceeding effective RX fail the link.
+Both proposed windows must be one frame, and UA windows larger than one are rejected.
+Window sizes count frames; `AcknowledgementTimeout` separately controls the recovery timer.
+Larger information fields do not change `LnAssociationOptions.MaxReceivePduSize`, add outgoing HDLC segmentation,
+or enable a sliding window. An outgoing APDU plus LLC must still fit one effective TX frame.
+
 Set `InformationFrameRetryCount = 1` and an `AcknowledgementTimeout` on `ApduFraming.Hdlc` to enable one recovery attempt per unacknowledged outgoing I-frame. After the timeout, the channel polls with RR. It sends the same information and send sequence again only if the peer's final RR still expects that sequence. The default retry count is zero. Choose an acknowledgement timeout that allows the initial wait, the recovery poll, and a possible replay within the session's `RequestTimeout`. When enabled, this policy also handles AARQ in place of `ClientSessionOptions.AssociationRetryDelay`. A link that exhausts recovery requires a new connection.
 
 `LinkObserver` reports checksum failures, timeout polls, and I-frame retransmissions. The channel discards frames with bad HCS/FCS and resumes at a validated frame boundary. RNR, REJ, and link reset responses end the exchange with an error.
