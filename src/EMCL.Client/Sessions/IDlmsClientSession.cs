@@ -93,7 +93,8 @@ public interface IDlmsClientSession : IAsyncDisposable
     ValueTask<ImportedAssociation> LoadCatalogAsync(AssociationImporter importer, string logicalDeviceId,
         string associationId, byte associationVersion, LogicalName? associationObject = null,
         CancellationToken cancellationToken = default);
-    /// <summary>Consumes notifications buffered independently of outstanding confirmed requests.</summary>
+    /// <summary>Consumes DataNotification messages independently of outstanding confirmed requests.</summary>
+    /// <remarks>Enumeration can start receiving before association. Once an AARE is accepted, DataNotification requires negotiated support.</remarks>
     /// <param name="cancellationToken">Cancellation of notification consumption, without canceling the session.</param>
     /// <returns>Notifications until release, disposal, or session failure; concurrent consumers divide the sequence.</returns>
     IAsyncEnumerable<DataNotification> ReadNotificationsAsync(CancellationToken cancellationToken = default);

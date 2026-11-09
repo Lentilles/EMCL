@@ -88,6 +88,40 @@ public sealed class ClientSessionTests
     }
 
     [Fact]
+    public async Task ReceivesNotificationsBeforeAssociationAndWhileWaitingForAare()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var pair = DuplexByteTransport.CreateWrapperPair();
+        await using var peer = new SessionPeer(pair.Server);
+        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
+        {
+            Association = new LnAssociationOptions { Conformance = DlmsConformance.Get }
+        });
+        await peer.SendRawAsync(FromHex("0FC00000010C07EA0A1A010C223800FF4C000202090600002A0000FF0600000001"));
+
+        await using var notifications = client.ReadNotificationsAsync(token).GetAsyncEnumerator(token);
+        Assert.True(await notifications.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), token));
+        Assert.Equal(ClientSessionState.Created, client.State);
+        Assert.Equal(0xC0000001u, notifications.Current.LongInvokeIdAndPriority);
+        AssertBytesEqual(FromHex("07EA0A1A010C223800FF4C00"), notifications.Current.DateTime.AsSpan());
+        Assert.Equal(DlmsType.Structure, notifications.Current.Body.Type);
+        Assert.Equal(1UL, notifications.Current.Body.Items[1].AsUInt64());
+
+        var associating = client.AssociateAsync(token).AsTask();
+        Assert.Equal(AcseKind.Aarq, (await peer.ReadAsync<AcseApdu>()).Kind);
+        await peer.SendAsync(new DataNotification(2, [], Number(DlmsType.UInt16, 700)));
+        await peer.SendAsync(AcseApdu.Aare(new ApduCodec().EncodeBytes(new InitiateResponse(null,
+            DlmsNegotiation.Version6, (uint)DlmsConformance.Get, 1024))));
+        Assert.Equal(DlmsConformance.Get, (await associating).Conformance);
+
+        Assert.True(await notifications.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), token));
+        Assert.Equal(2u, notifications.Current.LongInvokeIdAndPriority);
+        Assert.Equal(700UL, notifications.Current.Body.AsUInt64());
+        await peer.ReleaseAsync(client);
+        Assert.False(await notifications.MoveNextAsync());
+    }
+
+    [Fact]
     public async Task CorrelatesReversedConcurrentRepliesAndRoutesNotifications()
     {
         var pair = DuplexApduChannel.CreatePair();

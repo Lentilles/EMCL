@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using EMCL.Framing.Wrapper;
+using EMCL.Protocol.Apdu;
 using EMCL.Transport.Channels;
 
 namespace EMCL.Framing;
@@ -10,19 +11,26 @@ namespace EMCL.Framing;
 /// <param name="validatePorts">Whether to reject frames whose source or destination wPorts do not match.</param>
 public sealed class WrapperApduAdapter(ushort localPort, ushort remotePort, bool validatePorts = true) : IFramePayloadAdapter<WrapperFrame>
 {
+    internal ushort? NotificationPort { get; init; }
+
     /// <inheritdoc />
     public bool HasPending => false;
 
     /// <inheritdoc />
     public ReadOnlyMemory<byte>? Accept(WrapperFrame frame)
     {
-        if (validatePorts && (frame.SourcePort != remotePort || frame.DestinationPort != localPort))
+        if (validatePorts && (frame.SourcePort != remotePort
+            || (frame.DestinationPort != localPort && !IsAddressedNotification(frame))))
         {
             throw new InvalidDataException("Unexpected Wrapper ports.");
         }
 
         return frame.Payload.ToArray();
     }
+
+    private bool IsAddressedNotification(WrapperFrame frame) =>
+        frame.DestinationPort == NotificationPort
+        && !frame.Payload.IsEmpty && frame.Payload[0] == (byte)ApduTag.DataNotification;
 
     /// <inheritdoc />
     public IEnumerable<WrapperFrame> Frame(ReadOnlyMemory<byte> apdu) => [new(localPort, remotePort, apdu.ToArray().ToImmutableArray())];

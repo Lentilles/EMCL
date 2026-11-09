@@ -1,7 +1,10 @@
 using EMCL.Core.Codecs;
+using EMCL.Core.Values;
 using EMCL.Framing;
 using EMCL.Framing.Hdlc.Frames;
 using EMCL.Framing.Wrapper;
+using EMCL.Protocol.Apdu;
+using EMCL.Tests.Support;
 using EMCL.Transport.Streams;
 
 namespace EMCL.Tests.Transport;
@@ -27,6 +30,25 @@ public sealed class ApduChannelsTests
         }
 
         Assert.Equal(1, transport.DisposeCount);
+    }
+
+    [Fact]
+    public async Task WrapperAcceptsNotificationsOnConfiguredPortAndRejectsOtherTrafficThere()
+    {
+        byte[] notification = new ApduCodec().EncodeBytes(new DataNotification(1, [], DlmsValue.Null));
+        var codec = new WrapperCodec();
+        byte[] frames =
+        [
+            .. codec.EncodeBytes(new(1, 64, notification.ToImmutableArray())),
+            .. codec.EncodeBytes(new(1, 64, [0x61, 0x00]))
+        ];
+        var factory = new RecordingFactory(new ChunkTransport(frames, chunk: 3));
+        var settings = new ApduChannelSettings(factory, new ApduFraming.Wrapper(16, 1) { NotificationPort = 64 });
+        var token = TestContext.Current.CancellationToken;
+
+        await using var channel = await ApduChannels.ConnectAsync(settings, token);
+        Assert.Equal(notification, (await channel.ReceiveAsync(token))!.Value.ToArray());
+        await Assert.ThrowsAsync<InvalidDataException>(async () => await channel.ReceiveAsync(token));
     }
 
     [Fact]

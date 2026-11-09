@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
 using EMCL.Client.Association;
@@ -34,7 +35,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
     private NegotiatedAssociation? negotiated;
     private Exception? failure;
     private readonly TaskCompletionSource associationReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private Task receiveTask = Task.CompletedTask;
+    private Task? receiveTask;
     private Task cancellationTask = Task.CompletedTask;
     private Task? disposeTask;
     private PendingControl? control;
@@ -125,7 +126,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
             RequireState(ClientSessionState.Created);
             state = ClientSessionState.Associating;
             control = pending = new(AcseKind.Aare);
-            receiveTask = Task.Run(ReceiveLoopAsync);
+            receiveTask ??= Task.Run(ReceiveLoopAsync);
         }
 
         try
@@ -282,8 +283,23 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
     }
 
     /// <inheritdoc />
-    public IAsyncEnumerable<DataNotification> ReadNotificationsAsync(CancellationToken cancellationToken = default) =>
-        notifications.Reader.ReadAllAsync(cancellationToken);
+    public async IAsyncEnumerable<DataNotification> ReadNotificationsAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (gate)
+        {
+            if (state == ClientSessionState.Created)
+            {
+                receiveTask ??= Task.Run(ReceiveLoopAsync);
+            }
+        }
+
+        await foreach (var notification in notifications.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            yield return notification;
+        }
+    }
 
     /// <inheritdoc />
     public ValueTask DisposeAsync()
@@ -326,7 +342,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
     {
         try
         {
-            await Task.WhenAll(receiveTask, cancellationTask, callsIdle.Task).ConfigureAwait(false);
+            await Task.WhenAll(receiveTask ?? Task.CompletedTask, cancellationTask, callsIdle.Task).ConfigureAwait(false);
         }
         finally
         {

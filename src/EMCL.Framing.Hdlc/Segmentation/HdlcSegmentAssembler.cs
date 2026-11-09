@@ -42,12 +42,13 @@ public sealed class HdlcSegmentAssembler(ProtocolLimits? protocolLimits = null)
 
         if (frame.IsUnnumberedInformation)
         {
-            if (frame.Segmented || HasPending)
+            if (frame.Segmented)
             {
                 Reset();
-                throw new InvalidDataException("UI cannot participate in segmented I-frame transfer.");
+                throw new InvalidDataException("A UI frame cannot carry segmented data.");
             }
 
+            // A complete UI message can arrive before the final segment of an I-frame message.
             return frame.Information;
         }
 

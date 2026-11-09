@@ -42,8 +42,7 @@ public static class ApduChannels
         {
             return settings.Framing switch
             {
-                ApduFraming.Wrapper wrapper => Wrapper(transport, wrapper.LocalPort, wrapper.RemotePort,
-                    settings.Limits),
+                ApduFraming.Wrapper wrapper => Wrapper(transport, wrapper, settings.Limits),
                 _ => throw new NotSupportedException("Unsupported APDU framing.")
             };
         }
@@ -56,8 +55,14 @@ public static class ApduChannels
 
     /// <summary>Wraps an open byte transport with DLMS Wrapper framing. The returned channel owns the transport.</summary>
     public static IApduChannel Wrapper(IByteTransport transport, ushort localPort, ushort remotePort,
-        ProtocolLimits? limits = null) => new FramedApduChannel<WrapperFrame>(transport,
-            new WrapperCodec(limits), new WrapperApduAdapter(localPort, remotePort), limits);
+        ProtocolLimits? limits = null) => Wrapper(transport, new ApduFraming.Wrapper(localPort, remotePort), limits);
+
+    private static IApduChannel Wrapper(IByteTransport transport, ApduFraming.Wrapper framing,
+        ProtocolLimits? limits) => new FramedApduChannel<WrapperFrame>(transport,
+            new WrapperCodec(limits), new WrapperApduAdapter(framing.LocalPort, framing.RemotePort)
+            {
+                NotificationPort = framing.NotificationPort
+            }, limits);
 
     /// <summary>Establishes an HDLC link over an open byte transport. The returned channel owns the transport.</summary>
     /// <remarks>The channel uses stop-and-wait exchange and requires each outgoing APDU to fit one negotiated information frame.</remarks>

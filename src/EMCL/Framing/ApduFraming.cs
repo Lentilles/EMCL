@@ -10,7 +10,11 @@ public abstract record ApduFraming
     /// <summary>Uses DLMS Wrapper framing with the supplied wPorts.</summary>
     /// <param name="LocalPort">The local Wrapper wPort.</param>
     /// <param name="RemotePort">The remote Wrapper wPort.</param>
-    public sealed record Wrapper(ushort LocalPort, ushort RemotePort) : ApduFraming;
+    public sealed record Wrapper(ushort LocalPort, ushort RemotePort) : ApduFraming
+    {
+        /// <summary>Gets an optional additional local wPort for incoming DataNotification messages.</summary>
+        public ushort? NotificationPort { get; init; }
+    }
 
     /// <summary>Uses an HDLC client link with the supplied addresses and setup timeout.</summary>
     /// <param name="Local">The local HDLC client address.</param>
@@ -20,6 +24,9 @@ public abstract record ApduFraming
     public sealed record Hdlc(HdlcAddress Local, HdlcAddress Remote, TimeSpan LinkTimeout,
         Action<HdlcFrame, bool>? FrameObserver = null) : ApduFraming
     {
+        /// <summary>Gets an optional additional client address for incoming UI frames carrying DataNotification.</summary>
+        public HdlcAddress? NotificationAddress { get; init; }
+
         /// <summary>Allows incoming frames with a valid FCS to omit the closing flag. Defaults to false.</summary>
         public bool AllowMissingClosingFlag
         {

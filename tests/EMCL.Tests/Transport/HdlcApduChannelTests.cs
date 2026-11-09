@@ -39,12 +39,57 @@ public sealed class HdlcApduChannelTests
     }
 
     [Fact]
+    public async Task PreservesPushBeforeUaAndBetweenSegmentsOfAare()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var notificationAddress = HdlcAddress.Client(0x40);
+        await RunLoopbackAsync(async (stream, codec, local, remote) =>
+        {
+            await WriteFrameAsync(stream, codec, new(notificationAddress, remote, 0x13,
+                [0xE6, 0xE7, 0, 0x0F, 0, 0, 0, 1, 0, 0]));
+            await WriteFrameAsync(stream, codec, new(local, remote, HdlcControl.Ua, []));
+            Assert.True((await ReadFrameAsync(stream, codec)).IsInformation);
+
+            var apduCodec = new ApduCodec();
+            var aare = AcseApdu.Aare(apduCodec.EncodeBytes(new InitiateResponse(null,
+                DlmsNegotiation.Version6, (uint)DlmsConformance.Get, 1024)));
+            var adapter = new HdlcApduAdapter(remote, local, response: true, maxInformationBytes: 32)
+            {
+                ReceiveSequence = 1
+            };
+            var segments = adapter.Frame(apduCodec.EncodeBytes(aare)).ToArray();
+            Assert.Equal(2, segments.Length);
+            await WriteFrameAsync(stream, codec, segments[0]);
+            Assert.Equal(HdlcControl.CreateReceiveReady(1), (await ReadFrameAsync(stream, codec)).Control);
+            await WriteFrameAsync(stream, codec, new(local, remote, 0x03,
+                [0xE6, 0xE7, 0, 0x0F, 0, 0, 0, 2, 0, 0]));
+            await WriteFrameAsync(stream, codec, segments[1]);
+            Assert.Equal(HdlcControl.Disc, (await ReadFrameAsync(stream, codec)).Control);
+        }, async channel =>
+        {
+            await using var client = new DlmsClientSession(channel, new ClientSessionOptions
+            {
+                RequestTimeout = TimeSpan.FromSeconds(3),
+                LeaveOpen = true
+            });
+            Assert.Equal(DlmsConformance.Get, (await client.AssociateAsync(token)).Conformance);
+            await using var notifications = client.ReadNotificationsAsync(token).GetAsyncEnumerator(token);
+            Assert.True(await notifications.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), token));
+            Assert.Equal(1u, notifications.Current.LongInvokeIdAndPriority);
+            Assert.True(await notifications.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5), token));
+            Assert.Equal(2u, notifications.Current.LongInvokeIdAndPriority);
+        }, notificationAddress: notificationAddress);
+    }
+
+    [Fact]
     public async Task UnansweredAarqIsRetransmittedWithSameHdlcSequenceAndAareIsPreserved()
     {
         await RunLoopbackAsync(async (stream, codec, local, remote) =>
         {
             await WriteFrameAsync(stream, codec, new(local, remote, HdlcControl.Ua, []));
             var first = await ReadFrameAsync(stream, codec);
+            await WriteFrameAsync(stream, codec, new(local, remote, 0x13,
+                [0xE6, 0xE7, 0, 0x0F, 0, 0, 0, 1, 0, 0]));
             var retry = await ReadFrameAsync(stream, codec);
             Assert.Equal(first.Control, retry.Control);
             Assert.Equal(first.Information, retry.Information);
@@ -419,7 +464,8 @@ public sealed class HdlcApduChannelTests
     private static async Task RunLoopbackAsync(
         Func<NetworkStream, HdlcCodec, HdlcAddress, HdlcAddress, Task> serve,
         Func<IApduChannel, Task> verify, Action<HdlcFrame, bool>? observer = null,
-        HdlcAddress? configuredRemote = null, bool allowMissingClosingFlag = false)
+        HdlcAddress? configuredRemote = null, bool allowMissingClosingFlag = false,
+        HdlcAddress? notificationAddress = null)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -430,7 +476,8 @@ public sealed class HdlcApduChannelTests
             ((IPEndPoint)listener.LocalEndpoint).Port, TimeSpan.FromSeconds(5)),
             new ApduFraming.Hdlc(local, remote, TimeSpan.FromSeconds(5), observer)
             {
-                AllowMissingClosingFlag = allowMissingClosingFlag
+                AllowMissingClosingFlag = allowMissingClosingFlag,
+                NotificationAddress = notificationAddress
             });
         try
         {

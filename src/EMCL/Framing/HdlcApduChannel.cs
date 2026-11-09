@@ -3,6 +3,7 @@ using EMCL.Core.Codecs;
 using EMCL.Framing.Hdlc.Frames;
 using EMCL.Framing.Hdlc.Llc;
 using EMCL.Protocol.Acse;
+using EMCL.Protocol.Apdu;
 using EMCL.Transport.Channels;
 using EMCL.Transport.Streams;
 
@@ -26,9 +27,11 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
     private readonly HdlcCodec codec;
     private readonly HdlcAddress local;
     private readonly HdlcAddress remote;
+    private readonly HdlcAddress? notificationAddress;
     private readonly Action<HdlcFrame, bool>? frameObserver;
     private readonly SemaphoreSlim writeLock = new(1, 1);
     private readonly byte[] input = new byte[HdlcFrameFormat.MaximumFrameLength + HdlcFrameFormat.BoundaryFlagsLength];
+    private readonly Queue<HdlcFrame> setupNotifications = new();
     private HdlcApduAdapter? adapter;
     private HdlcFrame? setupUa;
     private HdlcFrame? firstDataFrame;
@@ -41,16 +44,16 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
     private byte nextReceiveSequence;
     private byte nextSendSequence;
 
-    private HdlcApduChannel(IByteTransport transport, HdlcAddress local, HdlcAddress remote,
-        Action<HdlcFrame, bool>? frameObserver, bool allowMissingClosingFlag)
+    private HdlcApduChannel(IByteTransport transport, ApduFraming.Hdlc framing)
     {
         this.transport = transport;
-        this.local = local;
-        this.remote = remote;
-        this.frameObserver = frameObserver;
+        local = framing.Local;
+        remote = framing.Remote;
+        notificationAddress = framing.NotificationAddress;
+        frameObserver = framing.FrameObserver;
         codec = new()
         {
-            AllowMissingClosingFlag = allowMissingClosingFlag
+            AllowMissingClosingFlag = framing.AllowMissingClosingFlag
         };
     }
 
@@ -65,8 +68,7 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
     public static Task<HdlcApduChannel> ConnectAsync(IByteTransport transport, HdlcAddress local,
         HdlcAddress remote, TimeSpan timeout, ProtocolLimits? limits = null,
         Action<HdlcFrame, bool>? frameObserver = null, CancellationToken cancellationToken = default) =>
-        ConnectCoreAsync(transport, local, remote, timeout, limits, frameObserver,
-            allowMissingClosingFlag: false, cancellationToken);
+        ConnectAsync(transport, new ApduFraming.Hdlc(local, remote, timeout, frameObserver), limits, cancellationToken);
 
     /// <summary>Establishes an HDLC link with the supplied framing settings and takes ownership of the transport.</summary>
     /// <param name="transport">An already open byte transport.</param>
@@ -77,21 +79,22 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
         ProtocolLimits? limits = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(framing);
-        return ConnectCoreAsync(transport, framing.Local, framing.Remote, framing.LinkTimeout, limits,
-            framing.FrameObserver, framing.AllowMissingClosingFlag, cancellationToken);
+        return ConnectCoreAsync(transport, framing, limits, cancellationToken);
     }
 
-    private static async Task<HdlcApduChannel> ConnectCoreAsync(IByteTransport transport, HdlcAddress local,
-        HdlcAddress remote, TimeSpan timeout, ProtocolLimits? limits, Action<HdlcFrame, bool>? frameObserver,
-        bool allowMissingClosingFlag, CancellationToken cancellationToken)
+    private static async Task<HdlcApduChannel> ConnectCoreAsync(IByteTransport transport, ApduFraming.Hdlc framing,
+        ProtocolLimits? limits, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(transport);
+        var timeout = framing.LinkTimeout;
         if (timeout <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(timeout));
         }
 
-        var channel = new HdlcApduChannel(transport, local, remote, frameObserver, allowMissingClosingFlag);
+        var channel = new HdlcApduChannel(transport, framing);
+        var local = framing.Local;
+        var remote = framing.Remote;
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -126,8 +129,17 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
         var dataAdapter = adapter ?? throw new InvalidOperationException("The HDLC link is not established.");
         while (true)
         {
-            var frame = await ReadFrameAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            var frame = setupNotifications.TryDequeue(out var buffered)
+                ? buffered
+                : await ReadFrameAsync(cancellationToken).ConfigureAwait(false);
             ValidateAddresses(frame);
+            if (frame.IsUnnumberedInformation)
+            {
+                // UI traffic is independent of the numbered exchange, including AARQ retry state.
+                return dataAdapter.Accept(frame with { Destination = local, Source = remote });
+            }
+
             if (frame.Control == HdlcControl.Ua)
             {
                 await HandleDuplicateUaAsync(frame, cancellationToken).ConfigureAwait(false);
@@ -148,14 +160,6 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
                 }
 
                 continue;
-            }
-
-            if (frame.IsUnnumberedInformation)
-            {
-                return dataAdapter.Accept(frame with
-                {
-                    Source = remote
-                });
             }
 
             ValidateSupervisoryFrame(frame);
@@ -300,13 +304,12 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
         for (int staleFrames = 0; staleFrames <= MaximumStaleFramesDuringLinkSetup; staleFrames++)
         {
             var frame = await ReadFrameAsync(cancellationToken);
-            if (frame.Destination != local || !ServerMatches(frame.Source))
+            if (!DestinationMatches(frame) || !ServerMatches(frame.Source))
             {
                 // Some gateways flush frames from a previous client when a new connection opens.
                 continue;
             }
 
-            ValidateAddresses(frame);
             if (frame.Control == HdlcControl.Ua)
             {
                 return frame;
@@ -315,6 +318,11 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
             if (frame.Control == HdlcControl.Dm)
             {
                 throw new IOException($"stage=SNRM/UA; the meter rejected HDLC link establishment (DM); client={local.Value}/{local.Length}, server={remote.Value}/{remote.Length}.");
+            }
+
+            if (IsDataNotificationFrame(frame))
+            {
+                setupNotifications.Enqueue(frame);
             }
         }
 
@@ -445,11 +453,18 @@ public sealed class HdlcApduChannel : IApduChannel, IAssociationRequestRetransmi
 
     private void ValidateAddresses(HdlcFrame frame)
     {
-        if (frame.Destination != local || !ServerMatches(frame.Source))
+        if (!DestinationMatches(frame) || !ServerMatches(frame.Source))
         {
             throw new InvalidDataException($"Unexpected HDLC frame addresses: expected client={local.Value}/{local.Length}, server={remote.Value}/{remote.Length}; received client={frame.Destination.Value}/{frame.Destination.Length}, server={frame.Source.Value}/{frame.Source.Length}.");
         }
     }
+
+    private bool DestinationMatches(HdlcFrame frame) => frame.Destination == local
+        || (frame.Destination == notificationAddress && IsDataNotificationFrame(frame));
+
+    private static bool IsDataNotificationFrame(HdlcFrame frame) => frame.IsUnnumberedInformation
+        && frame.Information.Length > LlcHeader.Length
+        && frame.Information[LlcHeader.Length] == (byte)ApduTag.DataNotification;
 
     private bool ServerMatches(HdlcAddress source) => source == remote || remote.HasSameServerComponents(source);
 

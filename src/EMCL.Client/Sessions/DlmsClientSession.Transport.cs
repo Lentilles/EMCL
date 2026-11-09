@@ -104,8 +104,8 @@ public sealed partial class DlmsClientSession
 
             if (apdu is DataNotification notification)
             {
-                if (state is not (ClientSessionState.Associated or ClientSessionState.Releasing)
-                    || (negotiated!.Conformance & DlmsConformance.DataNotification) == DlmsConformance.None)
+                if (negotiated is { } context
+                    && (context.Conformance & DlmsConformance.DataNotification) == DlmsConformance.None)
                 {
                     throw new DlmsProtocolException("A DataNotification was received outside the negotiated context.");
                 }

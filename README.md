@@ -358,7 +358,19 @@ Cancellation before sending preserves the association. Cancellation or a timeout
 
 Proposed conformance is checked against the implemented feature set. Services and selective access are enabled only after negotiation. Client and server maximum receive sizes are independent; a protocol value of zero means unlimited, but `ProtocolLimits` always apply. Nonzero sizes below 12 are reserved. Notification and GET block buffers are bounded; the first GET block must be numbered 1. `NotificationCapacity` must not exceed `MaxCollectionItems`, and a nonzero advertised receive size must not exceed `MaxMessageBytes`.
 
-`ReadNotificationsAsync` receives negotiated DataNotification messages independently of pending requests. The application must drain the buffer; overflow terminates the session with an explicit error. Canceling notification enumeration does not cancel the session.
+`ReadNotificationsAsync` receives unciphered DataNotification messages independently of pending requests. Enumeration can start as soon as the channel is connected, including before calling `AssociateAsync`. If you associate first, the session buffers notifications received while waiting for AARE, including HDLC UI frames received during SNRM/UA setup. After the session accepts AARE, DataNotification requires negotiated support.
+
+If the meter sends notifications to a separate destination on the same connection, set `ApduFraming.Hdlc.NotificationAddress` or `ApduFraming.Wrapper.NotificationPort` to that destination.
+
+```csharp
+await foreach (var notification in client.ReadNotificationsAsync(cancellationToken))
+{
+    Console.WriteLine($"Push {notification.LongInvokeIdAndPriority:X8}: {notification.Body.Type}");
+    // The optional timestamp is in DateTime, and Body contains the decoded DLMS value.
+}
+```
+
+Run the notification reader alongside any association operations you need. The application must drain the buffer. Overflow terminates the session with an explicit error. Canceling notification enumeration does not cancel the session.
 
 `LnAssociationOptions` supports no authentication, LLS, and HLS High (AES-128 challenge-response) through immutable `Password` bytes. HLS High invokes the Association LN method and validates the response before opening the session. To implement another mechanism, provide `IClientAssociationNegotiator` and `IClientHighLevelAuthenticator`; to replace APDU representation, provide `IIncrementalCodec<DlmsApdu>`; to replace the entire client, implement `IDlmsClientSession`. Protected APDUs require a separate implementation. Full HDLC lifecycle management with ARQ and retries remains future work.
 
