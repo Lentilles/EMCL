@@ -20,9 +20,9 @@ public static class ApduChannels
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(settings.Connection);
         ArgumentNullException.ThrowIfNull(settings.Framing);
-        if (settings.Framing is ApduFraming.Hdlc invalidHdlc && invalidHdlc.LinkTimeout <= TimeSpan.Zero)
+        if (settings.Framing is ApduFraming.Hdlc hdlcSettings)
         {
-            throw new ArgumentOutOfRangeException(nameof(ApduFraming.Hdlc.LinkTimeout));
+            hdlcSettings.Validate();
         }
 
         var transport = await settings.Connection.ConnectAsync(cancellationToken).ConfigureAwait(false);

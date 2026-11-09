@@ -271,7 +271,11 @@ await endpoint.SendAsync(new LnRequest(invokeIdAndPriority,
 var apdu = await endpoint.ReceiveAsync();
 ```
 
-For HDLC, replace only `Framing` with `new ApduFraming.Hdlc(HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(5))`. The channel performs SNRM/UA setup, tracks sequence numbers, acknowledges incoming segments with RR, and sends DISC on disposal. It does not perform retries and currently requires each outgoing APDU to fit a single negotiated information frame. `HdlcCodec` and `HdlcApduAdapter` are available for low-level frame control.
+For HDLC, replace only `Framing` with `new ApduFraming.Hdlc(HdlcAddress.Client(16), HdlcAddress.Server(1), TimeSpan.FromSeconds(5))`. The channel performs SNRM/UA setup, tracks sequence numbers, acknowledges incoming segments with RR, and sends DISC on disposal. Each outgoing APDU must fit a single negotiated information frame. `HdlcCodec` and `HdlcApduAdapter` are available for low-level frame control.
+
+Set `InformationFrameRetryCount = 1` and an `AcknowledgementTimeout` on `ApduFraming.Hdlc` to enable one recovery attempt per unacknowledged outgoing I-frame. After the timeout, the channel polls with RR. It sends the same information and send sequence again only if the peer's final RR still expects that sequence. The default retry count is zero. Choose an acknowledgement timeout that allows the initial wait, the recovery poll, and a possible replay within the session's `RequestTimeout`. When enabled, this policy also handles AARQ in place of `ClientSessionOptions.AssociationRetryDelay`. A link that exhausts recovery requires a new connection.
+
+`LinkObserver` reports checksum failures, timeout polls, and I-frame retransmissions. The channel discards frames with bad HCS/FCS and resumes at a validated frame boundary. RNR, REJ, and link reset responses end the exchange with an error.
 
 For a meter that omits the closing `0x7E`, set `AllowMissingClosingFlag = true` on `ApduFraming.Hdlc`. The receiver still requires the opening flag, the declared frame length, and valid HCS/FCS. Outgoing frames include both flags.
 
@@ -372,7 +376,7 @@ await foreach (var notification in client.ReadNotificationsAsync(cancellationTok
 
 Run the notification reader alongside any association operations you need. The application must drain the buffer. Overflow terminates the session with an explicit error. Canceling notification enumeration does not cancel the session.
 
-`LnAssociationOptions` supports no authentication, LLS, and HLS High (AES-128 challenge-response) through immutable `Password` bytes. HLS High invokes the Association LN method and validates the response before opening the session. To implement another mechanism, provide `IClientAssociationNegotiator` and `IClientHighLevelAuthenticator`; to replace APDU representation, provide `IIncrementalCodec<DlmsApdu>`; to replace the entire client, implement `IDlmsClientSession`. Protected APDUs require a separate implementation. Full HDLC lifecycle management with ARQ and retries remains future work.
+`LnAssociationOptions` supports no authentication, LLS, and HLS High (AES-128 challenge-response) through immutable `Password` bytes. HLS High invokes the Association LN method and validates the response before opening the session. To implement another mechanism, provide `IClientAssociationNegotiator` and `IClientHighLevelAuthenticator`. To replace APDU representation, provide `IIncrementalCodec<DlmsApdu>`. To replace the entire client, implement `IDlmsClientSession`. Protected APDUs require a separate implementation.
 
 A complete runnable example with a local object pipeline is available in [ClientSessionExample.cs](examples/EMCL.Examples/Client/ClientSessionExample.cs). The example's test peer demonstrates the exchange and is not a ready-to-use server session.
 

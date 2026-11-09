@@ -181,14 +181,14 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
         CancellationToken cancellationToken)
     {
         await SendAsync(request, options.Limits.MaxMessageBytes, cancellationToken).ConfigureAwait(false);
-        if (options.AssociationRetryDelay is { } retryDelay)
+        if (options.AssociationRetryDelay is { } retryDelay
+            && channel is IAssociationRequestRetransmission { HandlesAssociationRetransmission: false } retransmission)
         {
             var delay = Task.Delay(retryDelay, options.TimeProvider, cancellationToken);
             var first = await Task.WhenAny(responseTask, delay).ConfigureAwait(false);
             if (first == delay && !responseTask.IsCompleted)
             {
-                await ((IAssociationRequestRetransmission)channel)
-                    .RetryUnansweredAssociationRequestAsync(cancellationToken).ConfigureAwait(false);
+                await retransmission.RetryUnansweredAssociationRequestAsync(cancellationToken).ConfigureAwait(false);
             }
         }
 

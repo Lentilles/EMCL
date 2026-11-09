@@ -15,8 +15,17 @@ public sealed class HdlcCodec : IIncrementalCodec<HdlcFrame>
     }
 
     /// <inheritdoc />
-    public DecodeResult<HdlcFrame> Decode(ReadOnlySequence<byte> input)
+    public DecodeResult<HdlcFrame> Decode(ReadOnlySequence<byte> input) => Decode(input, out _, out _);
+
+    /// <summary>Decodes a frame and supplies checksum failure details for stream recovery.</summary>
+    /// <param name="input">The stream bytes starting at an opening flag.</param>
+    /// <param name="checksumFailed">Whether an HCS or FCS mismatch caused the failure.</param>
+    /// <param name="verifiedFrameEnd">On an FCS failure with a valid HCS, the offset immediately after the FCS.</param>
+    /// <returns>The normal incremental decode result.</returns>
+    public DecodeResult<HdlcFrame> Decode(ReadOnlySequence<byte> input, out bool checksumFailed, out long? verifiedFrameEnd)
     {
+        checksumFailed = false;
+        verifiedFrameEnd = null;
         // Length field bounds frames to 2047 octets; repeated idle flags are not copied.
         var reader = new SequenceReader<byte>(input);
         if (!reader.TryRead(out byte flag))
@@ -51,63 +60,76 @@ public sealed class HdlcCodec : IIncrementalCodec<HdlcFrame>
             return new(DecodeStatus.InvalidData, Error: "HDLC frame is too short.");
         }
 
-        if (reader.Remaining < length)
-        {
-            return new(DecodeStatus.NeedMoreData);
-        }
-
         long frameEnd = reader.Consumed + length;
-        if (!AllowMissingClosingFlag)
-        {
-            reader.Advance(length);
-            if (!reader.TryPeek(out byte closingFlag))
-            {
-                return new(DecodeStatus.NeedMoreData);
-            }
-
-            if (closingFlag != HdlcFrameFormat.Flag)
-            {
-                int nearbyLength = Math.Min(length, 8);
-                string nearClosing = Convert.ToHexString(input.Slice(frameEnd - nearbyLength, nearbyLength + 1).ToArray());
-                return new(DecodeStatus.InvalidData, Error:
-                    $"Missing HDLC closing flag at offset {frameEnd} " +
-                    $"(declared length {length}, found {closingFlag:X2}, near closing={nearClosing}).");
-            }
-        }
-
-        byte[] data = input.Slice(frameEnd - length, length).ToArray();
+        bool completeBody = reader.Remaining >= length;
+        // A bad HCS can mean the length itself was corrupted. Check it before waiting for the body.
+        const int maximumHeader = HdlcFrameFormat.FormatFieldLength + 2 * HdlcAddressFormat.ExtendedServerLength
+            + HdlcFrameFormat.ControlFieldLength + HdlcFrameFormat.ChecksumLength;
+        Span<byte> header = stackalloc byte[(int)Math.Min(reader.Remaining,
+            Math.Min(maximumHeader, length - HdlcFrameFormat.ChecksumLength))];
+        reader.TryCopyTo(header);
         int position = HdlcFrameFormat.FormatFieldLength;
         try
         {
-            var destination = ReadAddress(data.AsSpan(0, length - HdlcFrameFormat.ChecksumLength - HdlcFrameFormat.ControlFieldLength), ref position);
-            var source = ReadAddress(data.AsSpan(0, length - HdlcFrameFormat.ChecksumLength - HdlcFrameFormat.ControlFieldLength), ref position);
-            if (position >= length - HdlcFrameFormat.ChecksumLength)
-            {
-                throw new FormatException("Missing control field.");
-            }
-
-            byte control = data[position++];
+            var addresses = header[..^HdlcFrameFormat.ControlFieldLength];
+            var destination = ReadAddress(addresses, ref position);
+            var source = ReadAddress(addresses, ref position);
+            byte control = header[position++];
             int available = length - position - HdlcFrameFormat.ChecksumLength;
             if (available is > 0 and <= HdlcFrameFormat.ChecksumLength)
             {
                 throw new FormatException("Invalid HCS/information length.");
             }
 
-            ImmutableArray<byte> information = [];
             if (available > 0)
             {
-                if (ReadCrc(data, position) != HdlcChecksum.Compute(data.AsSpan(0, position)))
+                if (header.Length < position + HdlcFrameFormat.ChecksumLength)
                 {
-                    throw new FormatException("Invalid HDLC HCS.");
+                    return new(DecodeStatus.NeedMoreData);
+                }
+
+                if (ReadCrc(header, position) != HdlcChecksum.Compute(header[..position]))
+                {
+                    checksumFailed = true;
+                    return new(DecodeStatus.InvalidData, Error: "Invalid HDLC HCS.");
                 }
 
                 position += HdlcFrameFormat.ChecksumLength;
-                information = data.AsSpan(position, length - position - HdlcFrameFormat.ChecksumLength).ToArray().ToImmutableArray();
             }
 
+            if (!completeBody)
+            {
+                return new(DecodeStatus.NeedMoreData);
+            }
+
+            if (!AllowMissingClosingFlag)
+            {
+                reader.Advance(length);
+                if (!reader.TryPeek(out byte closingFlag))
+                {
+                    return new(DecodeStatus.NeedMoreData);
+                }
+
+                if (closingFlag != HdlcFrameFormat.Flag)
+                {
+                    int nearbyLength = Math.Min(length, 8);
+                    string nearClosing = Convert.ToHexString(input.Slice(frameEnd - nearbyLength, nearbyLength + 1).ToArray());
+                    return new(DecodeStatus.InvalidData, Error:
+                        $"Missing HDLC closing flag at offset {frameEnd} " +
+                        $"(declared length {length}, found {closingFlag:X2}, near closing={nearClosing}).");
+                }
+            }
+
+            byte[] data = input.Slice(frameEnd - length, length).ToArray();
             if (ReadCrc(data, length - HdlcFrameFormat.ChecksumLength) != HdlcChecksum.Compute(data.AsSpan(0, length - HdlcFrameFormat.ChecksumLength)))
             {
-                throw new FormatException("Invalid HDLC FCS.");
+                checksumFailed = true;
+                if (available > 0)
+                {
+                    verifiedFrameEnd = frameEnd;
+                }
+
+                return new(DecodeStatus.InvalidData, Error: "Invalid HDLC FCS.");
             }
 
             if (source.Length != HdlcAddressFormat.ClientLength && destination.Length != HdlcAddressFormat.ClientLength)
@@ -115,16 +137,19 @@ public sealed class HdlcCodec : IIncrementalCodec<HdlcFrame>
                 throw new FormatException("One address must be a one-octet client address.");
             }
 
+            ImmutableArray<byte> information = available > 0
+                ? data.AsSpan(position, length - position - HdlcFrameFormat.ChecksumLength).ToArray().ToImmutableArray()
+                : [];
             // Leave the next octet unread. A closing flag may also open the next frame.
             return DecodeResult<HdlcFrame>.Done(new(destination, source, control, information, (format[0] & HdlcFrameFormat.SegmentationMask) != 0), frameEnd);
         }
         catch (FormatException e)
         {
-            return new(DecodeStatus.InvalidData, Error: e.Message);
+            return completeBody ? new(DecodeStatus.InvalidData, Error: e.Message) : new(DecodeStatus.NeedMoreData);
         }
     }
 
-    private static ushort ReadCrc(byte[] data, int index) => (ushort)(data[index] | data[index + 1] << 8);
+    private static ushort ReadCrc(ReadOnlySpan<byte> data, int index) => (ushort)(data[index] | data[index + 1] << 8);
     private static HdlcAddress ReadAddress(ReadOnlySpan<byte> data, ref int position)
     {
         uint value = 0;

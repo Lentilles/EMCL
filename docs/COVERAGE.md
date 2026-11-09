@@ -39,7 +39,8 @@
 | Client Profile Generic reading | Streaming array and compact-array buffer rows from normal and block GET responses, with selective access and progress |
 | Client notifications | Separate bounded stream of negotiated DataNotification messages; overflow terminates the session |
 | Deadlines and cancellation | Cover the entire exchange; cancellation after a send attempt faults the association, while queue waiting is canceled separately |
-| Ready-to-use server session, full HDLC link management/ARQ, retry | Future work; the example performs only SNRM/UA and RR |
+| HDLC recovery | Optional RR polling and I-frame replay after an acknowledgement timeout, checksum recovery and duplicate suppression |
+| Ready-to-use server session, full HDLC link management | Future work |
 | ACTION block transfer, GBT, APDU list variants | Future work; Unsupported during decoding |
 | Client session authentication | None, LLS, and HLS High through AES-128 challenge-response and Association LN ACTION; AARE response and diagnostic are validated |
 | Protected APDUs, HLS SHA-256/GMAC, and other mechanisms | Require an external implementation; successful authentication is not simulated |

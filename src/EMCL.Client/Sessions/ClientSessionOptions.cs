@@ -12,6 +12,7 @@ public sealed record ClientSessionOptions
     /// <summary>Gets the timeout for an association, release, or complete operation including all GET or SET blocks; queue waiting uses caller cancellation.</summary>
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
     /// <summary>Optional delay before one retransmission of an unanswered AARQ on a channel that supports safe link-layer replay; null disables it.</summary>
+    /// <remarks>A channel with its own acknowledgement timer handles AARQ through its link settings.</remarks>
     public TimeSpan? AssociationRetryDelay
     {
         get; init;

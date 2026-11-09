@@ -32,5 +32,28 @@ public abstract record ApduFraming
         {
             get; init;
         }
+
+        /// <summary>Maximum recovery attempts per unacknowledged I-frame. Zero disables automatic recovery.</summary>
+        public int InformationFrameRetryCount { get; init; }
+
+        /// <summary>Time to wait for acknowledgement before polling the peer or reporting exhausted recovery.</summary>
+        public TimeSpan AcknowledgementTimeout { get; init; } = TimeSpan.FromSeconds(1);
+
+        /// <summary>Optional observer of discarded frames and recovery attempts.</summary>
+        public Action<HdlcLinkEvent>? LinkObserver { get; init; }
+
+        internal void Validate()
+        {
+            if (LinkTimeout <= TimeSpan.Zero || LinkTimeout.TotalMilliseconds > uint.MaxValue - 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(LinkTimeout));
+            }
+
+            ArgumentOutOfRangeException.ThrowIfNegative(InformationFrameRetryCount);
+            if (AcknowledgementTimeout <= TimeSpan.Zero || AcknowledgementTimeout.TotalMilliseconds > uint.MaxValue - 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(AcknowledgementTimeout));
+            }
+        }
     }
 }

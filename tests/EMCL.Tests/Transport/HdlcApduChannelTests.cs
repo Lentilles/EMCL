@@ -12,7 +12,7 @@ using EMCL.Transport.Streams;
 
 namespace EMCL.Tests.Transport;
 
-public sealed class HdlcApduChannelTests
+public sealed partial class HdlcApduChannelTests
 {
     [Fact]
     public async Task CompatibilityReceivesUaAndInformationWithoutClosingFlags()
@@ -465,7 +465,8 @@ public sealed class HdlcApduChannelTests
         Func<NetworkStream, HdlcCodec, HdlcAddress, HdlcAddress, Task> serve,
         Func<IApduChannel, Task> verify, Action<HdlcFrame, bool>? observer = null,
         HdlcAddress? configuredRemote = null, bool allowMissingClosingFlag = false,
-        HdlcAddress? notificationAddress = null)
+        HdlcAddress? notificationAddress = null, TimeSpan? acknowledgementTimeout = null,
+        Action<HdlcLinkEvent>? linkObserver = null)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -477,7 +478,10 @@ public sealed class HdlcApduChannelTests
             new ApduFraming.Hdlc(local, remote, TimeSpan.FromSeconds(5), observer)
             {
                 AllowMissingClosingFlag = allowMissingClosingFlag,
-                NotificationAddress = notificationAddress
+                NotificationAddress = notificationAddress,
+                InformationFrameRetryCount = acknowledgementTimeout.HasValue ? 1 : 0,
+                AcknowledgementTimeout = acknowledgementTimeout ?? TimeSpan.FromSeconds(1),
+                LinkObserver = linkObserver
             });
         try
         {
