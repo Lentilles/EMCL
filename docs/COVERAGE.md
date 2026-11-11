@@ -31,7 +31,7 @@
 | UDP lifecycle | Provided by the application or a custom transport |
 | IEC 62056-21 sign-on | Not supported; Serial starts exchanging data immediately at the configured baud rate |
 | Logical Name client session | AARQ/AARE, conformance and independent PDU limits, RLRQ/RLRE, states, and channel ownership |
-| Client operations | GET/SET/ACTION normal, selective access, up to 16 invoke IDs or one fixed Invoke-Id-And-Priority octet for sequential requests, one reader and a serialized writer |
+| Client operations | GET/SET/ACTION normal, selective access, normal or high request priority, up to 16 invoke IDs, and sequential compatibility options for a fixed request octet or ignoring response Invoke-Id-And-Priority |
 | Client GET block transfer | Automatic GET-next acknowledging the received block number; bounded assembly and validation of one A-XDR value |
 | Client SET block transfer | Automatic first/subsequent data blocks; negotiated support, complete PDU bounds, sequential acknowledgements, and a final data-access result |
 | Console export | Wrapper/TCP and HDLC/TCP gateway (SNRM/UA, I/RR without retries), separate JSON configuration, None/LLS/HLS High, OBIS/classes/members/v1/v3 rights in JSON; atomic saving |

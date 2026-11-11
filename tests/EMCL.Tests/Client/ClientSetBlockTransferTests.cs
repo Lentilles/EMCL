@@ -17,16 +17,21 @@ public sealed class ClientSetBlockTransferTests
     private static readonly DlmsConformance Services = new LnAssociationOptions().Conformance;
 
     [Theory]
-    [InlineData(49, false)]
-    [InlineData(50, false)]
-    [InlineData(49, true)]
-    [InlineData(50, true)]
-    public async Task UsesNormalSetAtTheExactPduBoundaryAndBlocksAboveIt(int size, bool selection)
+    [InlineData(49, false, null)]
+    [InlineData(50, false, null)]
+    [InlineData(49, true, null)]
+    [InlineData(50, true, null)]
+    [InlineData(49, false, (byte)0xC1)]
+    [InlineData(50, false, (byte)0xC1)]
+    public async Task UsesNormalSetAtTheExactPduBoundaryAndBlocksAboveIt(int size, bool selection, byte? mismatchedResponseInvoke)
     {
         var pair = DuplexApduChannel.CreatePair();
         var channel = new RecordingChannel(pair.Client);
         await using var peer = new SessionPeer(pair.Server);
-        await using var client = new DlmsClientSession(channel, SessionPeer.Options());
+        await using var client = new DlmsClientSession(channel, SessionPeer.Options() with
+        {
+            IgnoreInvokeIdValidation = mismatchedResponseInvoke.HasValue
+        });
         var access = selection ? new SelectiveAccess(1, DlmsValue.Octets([1, 2, 3])) : null;
         // Selective access contributes one selector and five parameter octets to the descriptor.
         ushort pdu = (ushort)(selection ? 70 : 64);
@@ -38,11 +43,12 @@ public sealed class ClientSetBlockTransferTests
             var request = await peer.ReadAsync<LnRequest>();
             Assert.Equal(CosemOperationKind.Write, request.Operation.Kind);
             Assert.Equal(pdu, channel.Sent[^1].Length);
-            await peer.SendAsync(new LnResponse(CosemOperationKind.Write, request.InvokeIdAndPriority, OperationResult.Ok()));
+            await peer.SendAsync(new LnResponse(CosemOperationKind.Write, mismatchedResponseInvoke ?? request.InvokeIdAndPriority,
+                OperationResult.Ok()));
         }
         else
         {
-            await CompleteBlocksAsync(peer, writing, value, access);
+            await CompleteBlocksAsync(peer, writing, value, access, mismatchedResponseInvoke);
         }
 
         await writing;
@@ -371,7 +377,8 @@ public sealed class ClientSetBlockTransferTests
     private static Task SetAsync(DlmsClientSession client, DlmsValue value, SelectiveAccess? selection = null) =>
         client.SetAsync(1, SessionPeer.RegisterName, 2, value, selection, TestContext.Current.CancellationToken).AsTask();
 
-    private static async Task CompleteBlocksAsync(SessionPeer peer, Task writing, DlmsValue value, SelectiveAccess? selection = null)
+    private static async Task CompleteBlocksAsync(SessionPeer peer, Task writing, DlmsValue value,
+        SelectiveAccess? selection = null, byte? mismatchedResponseInvoke = null)
     {
         var first = await peer.ReadAsync<SetFirstBlockRequest>();
         Assert.Equal(1u, first.BlockNumber);
@@ -392,10 +399,11 @@ public sealed class ClientSetBlockTransferTests
         var bytes = first.Data.ToList();
         bool last = first.LastBlock;
         uint number = 1;
+        byte responseInvoke = mismatchedResponseInvoke ?? first.InvokeIdAndPriority;
         while (!last)
         {
             Assert.False(writing.IsCompleted);
-            await peer.SendAsync(new SetBlockResponse(first.InvokeIdAndPriority, number));
+            await peer.SendAsync(new SetBlockResponse(responseInvoke, number));
             var next = await peer.ReadAsync<SetBlockRequest>();
             Assert.Equal(++number, next.BlockNumber);
             Assert.Equal(first.InvokeIdAndPriority, next.InvokeIdAndPriority);
@@ -406,7 +414,7 @@ public sealed class ClientSetBlockTransferTests
 
         Assert.False(writing.IsCompleted);
         AssertBytesEqual(new AxdrCodec().EncodeBytes(value), bytes.ToArray());
-        await peer.SendAsync(new SetBlockResponse(first.InvokeIdAndPriority, number, CosemResultCode.Success));
+        await peer.SendAsync(new SetBlockResponse(responseInvoke, number, CosemResultCode.Success));
         await writing;
     }
 

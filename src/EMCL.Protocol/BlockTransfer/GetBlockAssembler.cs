@@ -19,11 +19,19 @@ public sealed class GetBlockAssembler
 
     private readonly Dictionary<GetExchangeKey, Transfer> transfers = [];
     private readonly ProtocolLimits limits;
+    private readonly bool ignoreInvokeIdValidation;
+
     /// <summary>Creates an independent GET block assembler with explicit transfer resource limits.</summary>
     /// <param name="limits">Optional resource bounds; null selects validated defaults.</param>
     public GetBlockAssembler(ProtocolLimits? limits = null)
+        : this(limits, ignoreInvokeIdValidation: false)
+    {
+    }
+
+    internal GetBlockAssembler(ProtocolLimits? limits, bool ignoreInvokeIdValidation)
     {
         this.limits = ProtocolLimits.Resolve(limits);
+        this.ignoreInvokeIdValidation = ignoreInvokeIdValidation;
     }
 
     /// <summary>Starts a transfer expecting block number one and rejects reuse of an already active key.</summary>
@@ -72,7 +80,8 @@ public sealed class GetBlockAssembler
             }
 
             CosemResultCode error = CosemResultCode.Success;
-            if ((block.InvokeIdAndPriority & InvokeIdEncoding.IdMask) != key.InvokeId || block.BlockNumber != transfer.Expected)
+            if (block.BlockNumber != transfer.Expected
+                || !ignoreInvokeIdValidation && (block.InvokeIdAndPriority & InvokeIdEncoding.IdMask) != key.InvokeId)
             {
                 error = CosemResultCode.DataBlockNumberInvalid;
             }

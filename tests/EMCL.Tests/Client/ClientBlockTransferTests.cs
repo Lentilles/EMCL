@@ -15,13 +15,17 @@ namespace EMCL.Tests.Client;
 public sealed class ClientBlockTransferTests
 {
     [Theory]
-    [InlineData(3)]
-    [InlineData(1)]
-    public async Task ImportsKnownAndFutureObjectsFromAnAutomaticallyAssembledCatalog(byte version)
+    [InlineData(3, false)]
+    [InlineData(1, false)]
+    [InlineData(3, true)]
+    public async Task ImportsKnownAndFutureObjectsFromAnAutomaticallyAssembledCatalog(byte version, bool ignoreInvokeIdValidation)
     {
         var pair = DuplexApduChannel.CreatePair();
         await using var peer = new SessionPeer(pair.Server);
-        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options());
+        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
+        {
+            IgnoreInvokeIdValidation = ignoreInvokeIdValidation
+        });
         await peer.AssociateAsync(client);
         var importing = client.LoadCatalogAsync(new EmclBuilder().CreateImporter(), "meter", "public", version,
             cancellationToken: TestContext.Current.CancellationToken).AsTask();
@@ -31,9 +35,12 @@ public sealed class ClientBlockTransferTests
         var list = DlmsValue.Array(Entry(4, 0, "1.0.1.8.0.255"), Entry(9000, 9, "0.0.96.1.0.255"));
         var bytes = new AxdrCodec().EncodeBytes(list);
         int middle = bytes.Length / 2;
-        await peer.SendAsync(new GetBlockResponse(request.InvokeIdAndPriority, false, 1, bytes[..middle].ToImmutableArray()));
-        await peer.ReadAsync<GetNextRequest>();
-        await peer.SendAsync(new GetBlockResponse(request.InvokeIdAndPriority, true, 2, bytes[middle..].ToImmutableArray()));
+        byte firstResponseInvoke = ignoreInvokeIdValidation ? (byte)0xC1 : request.InvokeIdAndPriority;
+        await peer.SendAsync(new GetBlockResponse(firstResponseInvoke, false, 1, bytes[..middle].ToImmutableArray()));
+        var next = await peer.ReadAsync<GetNextRequest>();
+        Assert.Equal(request.InvokeIdAndPriority, next.InvokeIdAndPriority);
+        byte lastResponseInvoke = ignoreInvokeIdValidation ? (byte)0x42 : request.InvokeIdAndPriority;
+        await peer.SendAsync(new GetBlockResponse(lastResponseInvoke, true, 2, bytes[middle..].ToImmutableArray()));
         var imported = await importing;
         Assert.Equal(2, imported.Catalog.Objects.Length);
         Assert.True(imported.Catalog.Find(SessionPeer.RegisterName)!.Descriptor.IsKnown);
@@ -151,18 +158,24 @@ public sealed class ClientBlockTransferTests
     }
 
     [Theory]
-    [InlineData(0)]
-    [InlineData(2)]
-    public async Task RejectsInvalidFirstBlockNumbers(uint number)
+    [InlineData(0, false)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public async Task RejectsInvalidFirstBlockNumbers(uint number, bool ignoreInvokeIdValidation)
     {
         var pair = DuplexApduChannel.CreatePair();
         await using var peer = new SessionPeer(pair.Server);
-        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options());
+        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
+        {
+            IgnoreInvokeIdValidation = ignoreInvokeIdValidation
+        });
         await peer.AssociateAsync(client);
         var reading = SessionPeer.GetAsync(client, TestContext.Current.CancellationToken).AsTask();
         var request = await peer.ReadAsync<LnRequest>();
-        await peer.SendAsync(new GetBlockResponse(request.InvokeIdAndPriority, true, number, [0]));
-        await Assert.ThrowsAsync<DlmsProtocolException>(async () => await reading);
+        byte responseInvoke = ignoreInvokeIdValidation ? (byte)0xC1 : request.InvokeIdAndPriority;
+        await peer.SendAsync(new GetBlockResponse(responseInvoke, true, number, [0]));
+        var error = await Assert.ThrowsAsync<DlmsProtocolException>(async () => await reading);
+        Assert.Contains("block number is out of sequence", error.Message, StringComparison.Ordinal);
         Assert.Equal(ClientSessionState.Faulted, client.State);
     }
 

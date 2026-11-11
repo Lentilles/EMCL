@@ -191,14 +191,14 @@ public sealed partial class DlmsClientSession
             nextInvokeId = (byte)((nextInvokeId + 1) & InvokeIdEncoding.IdMask);
         }
 
-        byte invoke = InvokeIdEncoding.Create(nextInvokeId, options.HighPriority);
+        byte invoke = InvokeIdEncoding.Create(nextInvokeId, options.Priority);
         nextInvokeId = (byte)((nextInvokeId + 1) & InvokeIdEncoding.IdMask);
         return RegisterOperation(kind, invoke);
     }
 
     private PendingOperation RegisterOperation(CosemOperationKind kind, byte invoke)
     {
-        var pending = new PendingOperation(invoke, kind);
+        var pending = new PendingOperation(invoke, kind, options.IgnoreInvokeIdValidation);
         operations.Add(pending.Id, pending);
         if (activeOperations++ == 0)
         {

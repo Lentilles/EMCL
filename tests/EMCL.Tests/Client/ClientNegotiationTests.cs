@@ -18,11 +18,12 @@ namespace EMCL.Tests.Client;
 public sealed class ClientNegotiationTests
 {
     [Theory]
-    [InlineData(null, 0x40, null, 0x41)]
-    [InlineData((byte)0xC1, 0xC1, null, 0x40)]
-    [InlineData((byte)0xC1, 0xC1, (byte)0xC1, 0xC1)]
+    [InlineData(null, 0x40, null, 0x41, null)]
+    [InlineData((byte)0xC1, 0xC1, null, 0x40, null)]
+    [InlineData((byte)0xC1, 0xC1, (byte)0xC1, 0xC1, null)]
+    [InlineData((byte)0xC1, 0xC1, null, 0x40, (byte)0x42)]
     public async Task CompletesHighAuthenticationBeforeExposingAssociation(byte? hlsInvoke, byte expectedHlsInvoke,
-        byte? fixedInvoke, byte firstGetInvoke)
+        byte? fixedInvoke, byte firstGetInvoke, byte? mismatchedResponseInvoke)
     {
         byte[] secret = FromHex("000102030405060708090A0B0C0D0E0F");
         byte[] serverChallenge = FromHex("00112233445566778899AABBCCDDEEFF");
@@ -31,6 +32,7 @@ public sealed class ClientNegotiationTests
         await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
         {
             FixedInvokeIdAndPriority = fixedInvoke,
+            IgnoreInvokeIdValidation = mismatchedResponseInvoke.HasValue,
             Association = new()
             {
                 Authentication = ClientAuthentication.High,
@@ -56,7 +58,7 @@ public sealed class ClientNegotiationTests
         using var aes = Aes.Create();
         aes.Key = secret;
         byte[] serverReply = aes.EncryptEcb(aarq.CallingAuthenticationValue.Value.AsSpan(), PaddingMode.None);
-        await peer.SendAsync(new LnResponse(CosemOperationKind.Invoke, expectedHlsInvoke,
+        await peer.SendAsync(new LnResponse(CosemOperationKind.Invoke, mismatchedResponseInvoke ?? expectedHlsInvoke,
             OperationResult.Ok(DlmsValue.Octets(serverReply))));
         var negotiated = await associating;
         Assert.Equal(ClientSessionState.Associated, client.State);
@@ -70,7 +72,8 @@ public sealed class ClientNegotiationTests
             var get = await peer.ReadAsync<LnRequest>();
             Assert.Equal(CosemOperationKind.Read, get.Operation.Kind);
             Assert.Equal(expectedGetInvoke, get.InvokeIdAndPriority);
-            await peer.SendAsync(new LnResponse(CosemOperationKind.Read, expectedGetInvoke, OperationResult.Ok(DlmsValue.Null)));
+            await peer.SendAsync(new LnResponse(CosemOperationKind.Read, mismatchedResponseInvoke ?? expectedGetInvoke,
+                OperationResult.Ok(DlmsValue.Null)));
             Assert.Equal(DlmsType.Null, (await reading).Type);
         }
 
@@ -173,6 +176,45 @@ public sealed class ClientNegotiationTests
             {
                 FixedInvokeIdAndPriority = 0xC1
             }));
+    }
+
+    [Fact]
+    public async Task IgnoringInvokeIdValidationRequiresSequentialRequests()
+    {
+        var pair = DuplexApduChannel.CreatePair();
+        await using var clientChannel = pair.Client;
+        await using var peerChannel = pair.Server;
+        Assert.Throws<ArgumentException>(nameof(ClientSessionOptions.MaxConcurrentRequests), () =>
+            new DlmsClientSession(clientChannel, SessionPeer.Options(concurrency: 2) with
+            {
+                IgnoreInvokeIdValidation = true
+            }));
+    }
+
+    [Theory]
+    [InlineData(InvokePriority.Normal, 0x40)]
+    [InlineData(InvokePriority.High, 0xC0)]
+    public async Task EncodesConfiguredPriorityInRequests(InvokePriority priority, byte expectedInvoke)
+    {
+        var pair = DuplexApduChannel.CreatePair();
+        await using var peer = new SessionPeer(pair.Server);
+        var conformance = LnAssociationOptions.SupportedConformance;
+        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
+        {
+            Priority = priority,
+            Association = new()
+            {
+                Conformance = conformance
+            }
+        });
+        await peer.AssociateAsync(client, conformance);
+        var reading = SessionPeer.GetAsync(client, TestContext.Current.CancellationToken).AsTask();
+        var request = await peer.ReadAsync<LnRequest>();
+        Assert.Equal(expectedInvoke, request.InvokeIdAndPriority);
+        await peer.SendAsync(new LnResponse(CosemOperationKind.Read, request.InvokeIdAndPriority,
+            OperationResult.Ok(DlmsValue.Null)));
+        Assert.Equal(DlmsType.Null, (await reading).Type);
+        await peer.ReleaseAsync(client);
     }
 
     private static AcseApdu HighAare(byte[] serverChallenge)

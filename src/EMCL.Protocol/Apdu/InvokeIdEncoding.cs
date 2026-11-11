@@ -14,11 +14,18 @@ public static class InvokeIdEncoding
 
     /// <summary>Creates a confirmed-service invoke octet with a validated identifier.</summary>
     /// <param name="id">The four-bit invoke identifier.</param>
-    /// <param name="highPriority">Whether to set the high-priority flag.</param>
+    /// <param name="priority">The request priority.</param>
     /// <returns>The encoded invoke-id-and-priority octet.</returns>
-    public static byte Create(byte id, bool highPriority = false)
+    /// <exception cref="ArgumentOutOfRangeException">The identifier exceeds four bits or the priority is undefined.</exception>
+    public static byte Create(byte id, InvokePriority priority = InvokePriority.Normal)
     {
         ArgumentOutOfRangeException.ThrowIfGreaterThan(id, IdMask);
-        return (byte)(id | ConfirmedService | (highPriority ? HighPriority : 0));
+        byte priorityFlag = priority switch
+        {
+            InvokePriority.Normal => 0,
+            InvokePriority.High => HighPriority,
+            _ => throw new ArgumentOutOfRangeException(nameof(priority))
+        };
+        return (byte)(id | ConfirmedService | priorityFlag);
     }
 }

@@ -141,7 +141,7 @@ public sealed partial class DlmsClientSession
             var pending = operations.GetValueOrDefault(id);
             if (pending == null && operations.Count == 1)
             {
-                // With only one pending request, a wrong invoke ID can report the exact expected octet.
+                // The sole pending request can accept a mismatched octet in compatibility mode or report the expected octet.
                 pending = operations.Values.Single();
             }
 

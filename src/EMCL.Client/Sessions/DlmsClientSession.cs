@@ -62,7 +62,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
         this.negotiator = negotiator ?? new LnAssociationNegotiator(this.options.Limits);
         lifetimeToken = lifetime.Token;
         slots = new(this.options.MaxConcurrentRequests, this.options.MaxConcurrentRequests);
-        blocks = new(this.options.Limits);
+        blocks = new(this.options.Limits, this.options.IgnoreInvokeIdValidation);
         notifications = Channel.CreateBounded<DataNotification>(new BoundedChannelOptions(this.options.NotificationCapacity)
         {
             SingleWriter = true,
@@ -375,7 +375,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
             || (context.Conformance & ~options.Association.Conformance) != DlmsConformance.None
             || context.ServerMaxReceivePduSize != DlmsNegotiation.UnlimitedPduSize
                 && context.ServerMaxReceivePduSize < DlmsNegotiation.MinimumPduSize
-            || options.HighPriority && (context.Conformance & DlmsConformance.PriorityManagement) == DlmsConformance.None)
+            || options.Priority == InvokePriority.High && (context.Conformance & DlmsConformance.PriorityManagement) == DlmsConformance.None)
         {
             throw new DlmsProtocolException("The negotiated context does not match the supported client proposal.");
         }

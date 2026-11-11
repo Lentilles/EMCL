@@ -21,8 +21,13 @@ public sealed record ClientSessionOptions
     public int MaxConcurrentRequests { get; init; } = 1;
     /// <summary>Gets the bounded number of notifications waiting for application consumption; overflow faults the session.</summary>
     public int NotificationCapacity { get; init; } = 64;
-    /// <summary>Gets whether requests use high priority; priority management must be proposed and negotiated.</summary>
-    public bool HighPriority
+    /// <summary>Gets the priority for requests with automatically allocated invoke IDs.</summary>
+    /// <remarks>High priority requires priority management to be proposed and negotiated.</remarks>
+    public InvokePriority Priority { get; init; } = InvokePriority.Normal;
+    /// <summary>Allows response Invoke-Id-And-Priority octets to differ from those sent by the client.</summary>
+    /// <remarks>Applies to HLS ACTION and all subsequent operations, including block transfers.
+    /// This compatibility option defaults to false and requires <see cref="MaxConcurrentRequests"/> to be one.</remarks>
+    public bool IgnoreInvokeIdValidation
     {
         get; init;
     }
@@ -69,13 +74,23 @@ public sealed record ClientSessionOptions
             throw new ArgumentException("A fixed invoke-id-and-priority requires one request at a time.", nameof(MaxConcurrentRequests));
         }
 
+        if (IgnoreInvokeIdValidation && MaxConcurrentRequests != 1)
+        {
+            throw new ArgumentException("Ignoring invoke ID validation requires one request at a time.", nameof(MaxConcurrentRequests));
+        }
+
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(NotificationCapacity);
         if (NotificationCapacity > Limits.MaxCollectionItems)
         {
             throw new ArgumentOutOfRangeException(nameof(NotificationCapacity));
         }
 
-        if (HighPriority && (Association.Conformance & DlmsConformance.PriorityManagement) == DlmsConformance.None)
+        if (!Enum.IsDefined(Priority))
+        {
+            throw new ArgumentOutOfRangeException(nameof(Priority));
+        }
+
+        if (Priority == InvokePriority.High && (Association.Conformance & DlmsConformance.PriorityManagement) == DlmsConformance.None)
         {
             throw new ArgumentException("High priority requires a priority-management proposal.");
         }

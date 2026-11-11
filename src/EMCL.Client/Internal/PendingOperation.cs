@@ -5,7 +5,7 @@ using EMCL.Protocol.Apdu;
 
 namespace EMCL.Client.Internal;
 
-internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
+internal sealed class PendingOperation(byte invoke, CosemOperationKind kind, bool ignoreInvokeIdValidation)
 {
     private readonly Channel<DlmsApdu> responses = Channel.CreateBounded<DlmsApdu>(new BoundedChannelOptions(1)
     {
@@ -26,7 +26,7 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
     // The session gate protects routing state and preparation for GET and SET blocks.
     internal void Deliver(DlmsApdu response, byte receivedInvoke, string? stage)
     {
-        if (receivedInvoke != Invoke)
+        if (!ignoreInvokeIdValidation && receivedInvoke != Invoke)
         {
             stage ??= kind switch
             {
