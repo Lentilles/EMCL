@@ -480,32 +480,42 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
             return;
         }
 
-        if (recoveryLifetime is not null)
+        try
         {
-            await recoveryLifetime.CancelAsync().ConfigureAwait(false);
-            if (recoveryTask is not null)
+            if (recoveryLifetime is not null)
             {
-                await recoveryTask.ConfigureAwait(false);
+                try
+                {
+                    await recoveryLifetime.CancelAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (recoveryTask is not null)
+                    {
+                        await recoveryTask.ConfigureAwait(false);
+                    }
+                }
             }
 
-            recoveryLifetime.Dispose();
+            if (adapter is not null)
+            {
+                using var deadline = new CancellationTokenSource(DisconnectTimeout);
+                try
+                {
+                    await WriteFrameAsync(new(remote, local, HdlcControl.Disc, []), deadline.Token).ConfigureAwait(false);
+                }
+                catch (Exception error) when (error is IOException or TimeoutException or OperationCanceledException or ObjectDisposedException)
+                {
+                    // DISC is best effort if the peer is gone or the write times out.
+                }
+            }
         }
-
-        if (adapter != null)
+        finally
         {
-            using var deadline = new CancellationTokenSource(DisconnectTimeout);
-            try
-            {
-                await WriteFrameAsync(new(remote, local, HdlcControl.Disc, []), deadline.Token);
-            }
-            catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException)
-            {
-                // The peer may have closed first; local disposal still succeeds.
-            }
+            recoveryLifetime?.Dispose();
+            writeLock.Dispose();
+            await transport.DisposeAsync().ConfigureAwait(false);
         }
-
-        writeLock.Dispose();
-        await transport.DisposeAsync();
     }
 
     private async Task<HdlcFrame> WaitForUaAsync(CancellationToken cancellationToken)
