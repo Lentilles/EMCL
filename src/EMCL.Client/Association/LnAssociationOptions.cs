@@ -44,6 +44,14 @@ public sealed record LnAssociationOptions
     }
     /// <summary>Gets immutable authentication secret octets; they are never added to diagnostics.</summary>
     public ImmutableArray<byte> Password { get; init; } = [];
+    /// <summary>Overrides the Invoke-Id-And-Priority octet for the HLS ACTION exchange.</summary>
+    /// <remarks>Null uses the session's normal invoke allocation and priority. An explicit value must encode a
+    /// confirmed service with zero reserved bits. It can select high priority for HLS without negotiating PriorityManagement.
+    /// The override does not use an ID from the session's normal allocation sequence.</remarks>
+    public byte? HlsInvokeIdAndPriority
+    {
+        get; init;
+    }
 
     internal void Validate()
     {
@@ -59,7 +67,19 @@ public sealed record LnAssociationOptions
             throw new ArgumentOutOfRangeException(nameof(MaxReceivePduSize));
         }
 
+        ValidateInvokeIdAndPriority(HlsInvokeIdAndPriority, nameof(HlsInvokeIdAndPriority));
         ValidateAuthentication();
+    }
+
+    internal static void ValidateInvokeIdAndPriority(byte? value, string paramName)
+    {
+        const byte confirmed = InvokeIdEncoding.ConfirmedService;
+        const byte allowedBits = confirmed | InvokeIdEncoding.IdMask | InvokeIdEncoding.HighPriority;
+        if (value is byte invoke && ((invoke & confirmed) == 0 || (invoke & ~allowedBits) != 0))
+        {
+            throw new ArgumentOutOfRangeException(paramName,
+                "The invoke-id-and-priority must encode a confirmed service with zero reserved bits.");
+        }
     }
 
     private void ValidateConformance()

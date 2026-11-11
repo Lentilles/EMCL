@@ -428,7 +428,9 @@ await foreach (var notification in client.ReadNotificationsAsync(cancellationTok
 
 Run the notification reader alongside any association operations you need. The application must drain the buffer. Overflow terminates the session with an explicit error. Canceling notification enumeration does not cancel the session.
 
-`LnAssociationOptions` supports no authentication, LLS, and HLS High (AES-128 challenge-response) through immutable `Password` bytes. HLS High invokes the Association LN method and validates the response before opening the session. To implement another mechanism, provide `IClientAssociationNegotiator` and `IClientHighLevelAuthenticator`. To replace APDU representation, provide `IIncrementalCodec<DlmsApdu>`. To replace the entire client, implement `IDlmsClientSession`. Protected APDUs require a separate implementation.
+`LnAssociationOptions` supports no authentication, LLS, and HLS High (AES-128 challenge-response) through immutable `Password` bytes. HLS High invokes the Association LN method and validates the response before opening the session. Set `HlsInvokeIdAndPriority = 0xC1` for a meter that expects that octet on the HLS ACTION. For a meter that also requires the same octet on requests after association, set `ClientSessionOptions.FixedInvokeIdAndPriority = 0xC1` with `MaxConcurrentRequests = 1`. Both overrides require the response to echo the sent octet and can be used without `PriorityManagement` conformance.
+
+To implement another mechanism, provide `IClientAssociationNegotiator` and `IClientHighLevelAuthenticator`. To replace APDU representation, provide `IIncrementalCodec<DlmsApdu>`. To replace the entire client, implement `IDlmsClientSession`. Protected APDUs require a separate implementation.
 
 A complete runnable example with a local object pipeline is available in [ClientSessionExample.cs](examples/EMCL.Examples/Client/ClientSessionExample.cs). The example's test peer demonstrates the exchange and is not a ready-to-use server session.
 

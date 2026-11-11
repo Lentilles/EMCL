@@ -17,8 +17,12 @@ namespace EMCL.Tests.Client;
 
 public sealed class ClientNegotiationTests
 {
-    [Fact]
-    public async Task CompletesHighAuthenticationBeforeExposingAssociation()
+    [Theory]
+    [InlineData(null, 0x40, null, 0x41)]
+    [InlineData((byte)0xC1, 0xC1, null, 0x40)]
+    [InlineData((byte)0xC1, 0xC1, (byte)0xC1, 0xC1)]
+    public async Task CompletesHighAuthenticationBeforeExposingAssociation(byte? hlsInvoke, byte expectedHlsInvoke,
+        byte? fixedInvoke, byte firstGetInvoke)
     {
         byte[] secret = FromHex("000102030405060708090A0B0C0D0E0F");
         byte[] serverChallenge = FromHex("00112233445566778899AABBCCDDEEFF");
@@ -26,10 +30,12 @@ public sealed class ClientNegotiationTests
         await using var peer = new SessionPeer(pair.Server);
         await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
         {
+            FixedInvokeIdAndPriority = fixedInvoke,
             Association = new()
             {
                 Authentication = ClientAuthentication.High,
-                Password = secret.ToImmutableArray()
+                Password = secret.ToImmutableArray(),
+                HlsInvokeIdAndPriority = hlsInvoke
             }
         });
 
@@ -40,6 +46,7 @@ public sealed class ClientNegotiationTests
         Assert.False(associating.IsCompleted);
         await peer.SendAsync(HighAare(serverChallenge));
         var action = await peer.ReadAsync<LnRequest>();
+        Assert.Equal(expectedHlsInvoke, action.InvokeIdAndPriority);
         Assert.Equal(CosemOperationKind.Invoke, action.Operation.Kind);
         Assert.Equal(CosemClassIds.AssociationLn, action.Operation.ClassId);
         Assert.Equal(AssociationLnMembers.Methods.ReplyToHlsAuthentication, action.Operation.Index);
@@ -49,15 +56,34 @@ public sealed class ClientNegotiationTests
         using var aes = Aes.Create();
         aes.Key = secret;
         byte[] serverReply = aes.EncryptEcb(aarq.CallingAuthenticationValue.Value.AsSpan(), PaddingMode.None);
-        await peer.SendAsync(new LnResponse(CosemOperationKind.Invoke, action.InvokeIdAndPriority,
+        await peer.SendAsync(new LnResponse(CosemOperationKind.Invoke, expectedHlsInvoke,
             OperationResult.Ok(DlmsValue.Octets(serverReply))));
-        await associating;
+        var negotiated = await associating;
         Assert.Equal(ClientSessionState.Associated, client.State);
+        Assert.Equal((DlmsConformance)0x00189D, negotiated.Conformance);
+        Assert.Equal(384, negotiated.ServerMaxReceivePduSize);
+
+        for (int offset = 0; offset < 2; offset++)
+        {
+            byte expectedGetInvoke = fixedInvoke ?? (byte)(firstGetInvoke + offset);
+            var reading = SessionPeer.GetAsync(client, TestContext.Current.CancellationToken).AsTask();
+            var get = await peer.ReadAsync<LnRequest>();
+            Assert.Equal(CosemOperationKind.Read, get.Operation.Kind);
+            Assert.Equal(expectedGetInvoke, get.InvokeIdAndPriority);
+            await peer.SendAsync(new LnResponse(CosemOperationKind.Read, expectedGetInvoke, OperationResult.Ok(DlmsValue.Null)));
+            Assert.Equal(DlmsType.Null, (await reading).Type);
+        }
+
         await peer.ReleaseAsync(client);
     }
 
-    [Fact]
-    public async Task RejectsIncorrectHighAuthenticationReply()
+    [Theory]
+    [InlineData(null, 0x40, 0x41)]
+    [InlineData(null, 0x40, 0xC0)]
+    [InlineData(null, 0x40, 0xC1)]
+    [InlineData((byte)0xC1, 0xC1, 0xC0)]
+    [InlineData((byte)0xC1, 0xC1, 0x41)]
+    public async Task RejectsAnHlsInvokeMismatchWithTheStageAndBothOctets(byte? hlsInvoke, byte expected, byte received)
     {
         var pair = DuplexApduChannel.CreatePair();
         await using var peer = new SessionPeer(pair.Server);
@@ -66,23 +92,93 @@ public sealed class ClientNegotiationTests
             Association = new()
             {
                 Authentication = ClientAuthentication.High,
-                Password = new byte[16].ToImmutableArray()
+                Password = new byte[16].ToImmutableArray(),
+                HlsInvokeIdAndPriority = hlsInvoke
             }
         });
         var associating = client.AssociateAsync(TestContext.Current.CancellationToken).AsTask();
-        await peer.ReadAsync<AcseApdu>();
+        var aarq = await peer.ReadAsync<AcseApdu>();
         await peer.SendAsync(HighAare(new byte[16]));
         var action = await peer.ReadAsync<LnRequest>();
-        await peer.SendAsync(new LnResponse(CosemOperationKind.Invoke, action.InvokeIdAndPriority,
-            OperationResult.Ok(DlmsValue.Octets(new byte[16]))));
-        await Assert.ThrowsAsync<DlmsAssociationException>(async () => await associating);
+        Assert.Equal(expected, action.InvokeIdAndPriority);
+
+        using var aes = Aes.Create();
+        aes.Key = new byte[16];
+        var reply = aes.EncryptEcb(aarq.CallingAuthenticationValue!.Value.AsSpan(), PaddingMode.None);
+        await peer.SendAsync(new LnResponse(CosemOperationKind.Invoke, received, OperationResult.Ok(DlmsValue.Octets(reply))));
+
+        var error = await Assert.ThrowsAsync<DlmsProtocolException>(async () => await associating);
+        Assert.Contains("stage=HLS ACTION", error.Message, StringComparison.Ordinal);
+        Assert.Contains($"expected=0x{expected:X2}, received=0x{received:X2}", error.Message, StringComparison.Ordinal);
         Assert.Equal(ClientSessionState.Faulted, client.State);
+    }
+
+    [Theory]
+    [InlineData(null, 0x40)]
+    [InlineData((byte)0xC1, 0xC1)]
+    public async Task RejectsIncorrectHighAuthenticationReply(byte? hlsInvoke, byte expectedHlsInvoke)
+    {
+        var pair = DuplexApduChannel.CreatePair();
+        await using var peer = new SessionPeer(pair.Server);
+        await using var client = new DlmsClientSession(pair.Client, SessionPeer.Options() with
+        {
+            Association = new()
+            {
+                Authentication = ClientAuthentication.High,
+                Password = new byte[16].ToImmutableArray(),
+                HlsInvokeIdAndPriority = hlsInvoke
+            }
+        });
+        var associating = client.AssociateAsync(TestContext.Current.CancellationToken).AsTask();
+        var aarq = await peer.ReadAsync<AcseApdu>();
+        await peer.SendAsync(HighAare(new byte[16]));
+        var action = await peer.ReadAsync<LnRequest>();
+        Assert.Equal(expectedHlsInvoke, action.InvokeIdAndPriority);
+        using var aes = Aes.Create();
+        aes.Key = new byte[16];
+        var reply = aes.EncryptEcb(aarq.CallingAuthenticationValue!.Value.AsSpan(), PaddingMode.None);
+        reply[0] ^= 1;
+        await peer.SendAsync(new LnResponse(CosemOperationKind.Invoke, expectedHlsInvoke,
+            OperationResult.Ok(DlmsValue.Octets(reply))));
+        var error = await Assert.ThrowsAsync<DlmsAssociationException>(async () => await associating);
+        Assert.Contains("HLS challenge response is invalid", error.Message, StringComparison.Ordinal);
+        Assert.Equal(ClientSessionState.Faulted, client.State);
+    }
+
+    [Theory]
+    [InlineData(0x81)]
+    [InlineData(0x51)]
+    [InlineData(0xE1)]
+    public void RejectsAnUnconfirmedHlsServiceOrNonzeroReservedBits(byte invoke)
+    {
+        var options = new LnAssociationOptions
+        {
+            Authentication = ClientAuthentication.High,
+            Password = new byte[16].ToImmutableArray(),
+            HlsInvokeIdAndPriority = invoke
+        };
+        var negotiator = new LnAssociationNegotiator();
+        Assert.Throws<ArgumentOutOfRangeException>(nameof(LnAssociationOptions.HlsInvokeIdAndPriority),
+            () => negotiator.CreateRequest(options));
+    }
+
+    [Fact]
+    public async Task FixedInvokeIdAndPriorityRequiresSequentialRequests()
+    {
+        var pair = DuplexApduChannel.CreatePair();
+        await using var clientChannel = pair.Client;
+        await using var peerChannel = pair.Server;
+        Assert.Throws<ArgumentException>(nameof(ClientSessionOptions.MaxConcurrentRequests), () =>
+            new DlmsClientSession(clientChannel, SessionPeer.Options(concurrency: 2) with
+            {
+                FixedInvokeIdAndPriority = 0xC1
+            }));
     }
 
     private static AcseApdu HighAare(byte[] serverChallenge)
     {
         var response = AcseApdu.Aare(new ApduCodec().EncodeBytes(new InitiateResponse(null,
-            DlmsNegotiation.Version6, (uint)new LnAssociationOptions().Conformance, 1024)),
+            DlmsNegotiation.Version6, 0x00189D, 384)),
             diagnostic: (byte)AcseServiceUserDiagnostic.AuthenticationRequired);
         return response with
         {

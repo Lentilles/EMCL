@@ -138,12 +138,19 @@ public sealed partial class DlmsClientSession
                 _ => throw new DlmsProtocolException("The peer sent an unexpected application service.")
             };
             byte id = (byte)(invoke & InvokeIdEncoding.IdMask);
-            if (!operations.TryGetValue(id, out var pending))
+            var pending = operations.GetValueOrDefault(id);
+            if (pending == null && operations.Count == 1)
             {
-                throw new DlmsProtocolException("No outstanding request matches the received invoke ID.");
+                // With only one pending request, a wrong invoke ID can report the exact expected octet.
+                pending = operations.Values.Single();
             }
 
-            pending.Deliver(apdu);
+            if (pending == null)
+            {
+                throw new DlmsProtocolException($"No outstanding request matches the received Invoke-Id-And-Priority 0x{invoke:X2}.");
+            }
+
+            pending.Deliver(apdu, invoke, state == ClientSessionState.Associating ? HlsActionStage : null);
             return false;
         }
     }

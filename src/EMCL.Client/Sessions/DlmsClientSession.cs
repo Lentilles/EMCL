@@ -17,6 +17,7 @@ namespace EMCL.Client.Sessions;
 /// <remarks>Operations are serialized by default; opt-in concurrency allocates separate invoke IDs. No retries or transport connections are created. Timeout or cancellation after a send attempt faults the association to prevent late-response reuse. Disposal cancels and drains I/O before optionally disposing the channel. Channel implementations must honor cancellation. Calls to the injected codec are serialized by the session.</remarks>
 public sealed partial class DlmsClientSession : IDlmsClientSession
 {
+    private const string HlsActionStage = "HLS ACTION";
     private readonly Lock gate = new();
     private readonly Lock codecGate = new();
     private readonly IApduChannel channel;
@@ -145,7 +146,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
             if (negotiator is IClientHighLevelAuthenticator authenticator
                 && authenticator.CreateAuthenticationOperation(request, response, options.Association) is { } operation)
             {
-                stage = "HLS ACTION";
+                stage = HlsActionStage;
                 var result = await AuthenticateAsync(operation, deadline.Token).ConfigureAwait(false);
                 authenticator.ValidateAuthenticationResponse(result.Result.Value, request, response, options.Association);
             }
@@ -202,7 +203,9 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
         {
             RequireState(ClientSessionState.Associating);
             ValidateOperation(operation);
-            pending = RegisterOperation(operation.Kind);
+            pending = options.Association.HlsInvokeIdAndPriority is byte invoke
+                ? RegisterOperation(operation.Kind, invoke)
+                : RegisterOperation(operation.Kind);
         }
 
         try

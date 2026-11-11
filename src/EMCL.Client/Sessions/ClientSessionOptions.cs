@@ -26,6 +26,14 @@ public sealed record ClientSessionOptions
     {
         get; init;
     }
+    /// <summary>Overrides the Invoke-Id-And-Priority octet for every request after association establishment.</summary>
+    /// <remarks>Use only for peers that require a fixed octet. The value must encode a confirmed service with
+    /// zero reserved bits and requires one request at a time. An explicit high-priority octet can be used
+    /// without negotiating PriorityManagement. HLS ACTION is configured through the association proposal.</remarks>
+    public byte? FixedInvokeIdAndPriority
+    {
+        get; init;
+    }
     /// <summary>Gets the shared limits for APDUs, decoded values, accumulated GET blocks, and outgoing SET value bytes and block count.</summary>
     public ProtocolLimits Limits { get; init; } = new();
     /// <summary>Gets the time provider used for exchange deadlines.</summary>
@@ -55,6 +63,12 @@ public sealed record ClientSessionOptions
 
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxConcurrentRequests, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxConcurrentRequests, InvokeIdEncoding.Capacity);
+        LnAssociationOptions.ValidateInvokeIdAndPriority(FixedInvokeIdAndPriority, nameof(FixedInvokeIdAndPriority));
+        if (FixedInvokeIdAndPriority.HasValue && MaxConcurrentRequests != 1)
+        {
+            throw new ArgumentException("A fixed invoke-id-and-priority requires one request at a time.", nameof(MaxConcurrentRequests));
+        }
+
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(NotificationCapacity);
         if (NotificationCapacity > Limits.MaxCollectionItems)
         {

@@ -31,7 +31,7 @@
 | UDP lifecycle | Provided by the application or a custom transport |
 | IEC 62056-21 sign-on | Not supported; Serial starts exchanging data immediately at the configured baud rate |
 | Logical Name client session | AARQ/AARE, conformance and independent PDU limits, RLRQ/RLRE, states, and channel ownership |
-| Client operations | GET/SET/ACTION normal, selective access, up to 16 invoke IDs, one reader and a serialized writer |
+| Client operations | GET/SET/ACTION normal, selective access, up to 16 invoke IDs or one fixed Invoke-Id-And-Priority octet for sequential requests, one reader and a serialized writer |
 | Client GET block transfer | Automatic GET-next acknowledging the received block number; bounded assembly and validation of one A-XDR value |
 | Client SET block transfer | Automatic first/subsequent data blocks; negotiated support, complete PDU bounds, sequential acknowledgements, and a final data-access result |
 | Console export | Wrapper/TCP and HDLC/TCP gateway (SNRM/UA, I/RR without retries), separate JSON configuration, None/LLS/HLS High, OBIS/classes/members/v1/v3 rights in JSON; atomic saving |
@@ -44,7 +44,7 @@
 | HDLC recovery | Optional RR polling and I-frame replay after an acknowledgement timeout; receive-window silence/continuation recovery, checksum recovery and duplicate suppression |
 | Ready-to-use server session, full HDLC link management | Future work |
 | ACTION block transfer, GBT, APDU list variants | Future work; Unsupported during decoding |
-| Client session authentication | None, LLS, and HLS High through AES-128 challenge-response and Association LN ACTION; AARE response and diagnostic are validated |
+| Client session authentication | None, LLS, and HLS High through AES-128 challenge-response and Association LN ACTION, with an optional HLS-specific Invoke-Id-And-Priority octet; AARE response and diagnostic are validated |
 | Protected APDUs, HLS SHA-256/GMAC, and other mechanisms | Require an external implementation; successful authentication is not simulated |
 
 ## Model boundaries

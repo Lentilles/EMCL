@@ -24,8 +24,19 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
     internal byte Id => (byte)(Invoke & InvokeIdEncoding.IdMask);
 
     // The session gate protects routing state and preparation for GET and SET blocks.
-    internal void Deliver(DlmsApdu response)
+    internal void Deliver(DlmsApdu response, byte receivedInvoke, string? stage)
     {
+        if (receivedInvoke != Invoke)
+        {
+            stage ??= kind switch
+            {
+                CosemOperationKind.Read => "GET",
+                CosemOperationKind.Write => "SET",
+                _ => "ACTION"
+            };
+            throw new DlmsProtocolException($"stage={stage}; Invoke-Id-And-Priority mismatch: expected=0x{Invoke:X2}, received=0x{receivedInvoke:X2}.");
+        }
+
         if (!waiting)
         {
             throw new DlmsProtocolException("A duplicate or unsolicited response was received for an active invoke ID.");
@@ -33,13 +44,13 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind)
 
         bool completesExchange = response switch
         {
-            LnResponse normal when normal.InvokeIdAndPriority == Invoke && normal.Kind == kind && !getBlocksStarted
+            LnResponse normal when normal.Kind == kind && !getBlocksStarted
                 => AcceptNormalResponse(normal),
-            SetBlockResponse block when block.InvokeIdAndPriority == Invoke && kind == CosemOperationKind.Write && setBlocksStarted
+            SetBlockResponse block when kind == CosemOperationKind.Write && setBlocksStarted
                 => AcceptSetBlock(block),
-            GetBlockResponse block when block.InvokeIdAndPriority == Invoke && kind == CosemOperationKind.Read
+            GetBlockResponse block when kind == CosemOperationKind.Read
                 => AcceptGetBlock(block),
-            _ => throw new DlmsProtocolException("The response service or invoke-id-and-priority does not match the request.")
+            _ => throw new DlmsProtocolException("The response service does not match the request.")
         };
 
         waiting = false;

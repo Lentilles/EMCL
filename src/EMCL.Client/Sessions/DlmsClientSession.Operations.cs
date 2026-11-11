@@ -75,7 +75,9 @@ public sealed partial class DlmsClientSession
             lock (gate)
             {
                 RequireState(ClientSessionState.Associated);
-                pending = RegisterOperation(operation.Kind);
+                pending = options.FixedInvokeIdAndPriority is byte invoke
+                    ? RegisterOperation(operation.Kind, invoke)
+                    : RegisterOperation(operation.Kind);
             }
 
             return await ExecuteExchangeAsync(operation, pending, stream, cancellationToken).ConfigureAwait(false);
@@ -189,9 +191,15 @@ public sealed partial class DlmsClientSession
             nextInvokeId = (byte)((nextInvokeId + 1) & InvokeIdEncoding.IdMask);
         }
 
-        var pending = new PendingOperation(InvokeIdEncoding.Create(nextInvokeId, options.HighPriority), kind);
-        operations.Add(pending.Id, pending);
+        byte invoke = InvokeIdEncoding.Create(nextInvokeId, options.HighPriority);
         nextInvokeId = (byte)((nextInvokeId + 1) & InvokeIdEncoding.IdMask);
+        return RegisterOperation(kind, invoke);
+    }
+
+    private PendingOperation RegisterOperation(CosemOperationKind kind, byte invoke)
+    {
+        var pending = new PendingOperation(invoke, kind);
+        operations.Add(pending.Id, pending);
         if (activeOperations++ == 0)
         {
             idle = new(TaskCreationOptions.RunContinuationsAsynchronously);
