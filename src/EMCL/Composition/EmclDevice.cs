@@ -6,6 +6,7 @@ using EMCL.Core.Pipeline;
 using EMCL.Objects.Association;
 using EMCL.Objects.Catalog;
 using EMCL.Objects.Processing;
+using EMCL.Objects.Spodes;
 
 namespace EMCL.Composition;
 
@@ -29,6 +30,11 @@ public sealed class EmclDevice(ObjectCatalog catalog, ClassRegistry definitions,
     public AssociationState Associations { get; } = associations;
     /// <summary>Gets or sets the complete operation pipeline used by the application.</summary>
     public IDlmsPipeline Pipeline { get; set; } = pipeline;
+    /// <summary>Gets the local scheduler and measurement processor for a SPODES device.</summary>
+    public SpodesAutomation? SpodesAutomation
+    {
+        get; internal set;
+    }
     /// <summary>Gets a local operation context without association permission checks.</summary>
     /// <remarks>No association snapshot means unrestricted local execution under the selected access policy; use CreateContext for imported association permissions.</remarks>
     public OperationContext LocalContext => new(Catalog.LogicalDeviceId);

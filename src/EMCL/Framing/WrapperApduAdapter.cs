@@ -11,7 +11,10 @@ namespace EMCL.Framing;
 /// <param name="validatePorts">Whether to reject frames whose source or destination wPorts do not match.</param>
 public sealed class WrapperApduAdapter(ushort localPort, ushort remotePort, bool validatePorts = true) : IFramePayloadAdapter<WrapperFrame>
 {
-    internal ushort? NotificationPort { get; init; }
+    internal ushort? NotificationPort
+    {
+        get; init;
+    }
 
     /// <inheritdoc />
     public bool HasPending => false;
@@ -30,7 +33,8 @@ public sealed class WrapperApduAdapter(ushort localPort, ushort remotePort, bool
 
     private bool IsAddressedNotification(WrapperFrame frame) =>
         frame.DestinationPort == NotificationPort
-        && !frame.Payload.IsEmpty && frame.Payload[0] == (byte)ApduTag.DataNotification;
+        && !frame.Payload.IsEmpty && (ApduTag)frame.Payload[0] is ApduTag.DataNotification
+            or ApduTag.GeneralGlobalCiphering or ApduTag.GeneralDedicatedCiphering or ApduTag.GeneralBlockTransfer;
 
     /// <inheritdoc />
     public IEnumerable<WrapperFrame> Frame(ReadOnlyMemory<byte> apdu) => [new(localPort, remotePort, apdu.ToArray().ToImmutableArray())];

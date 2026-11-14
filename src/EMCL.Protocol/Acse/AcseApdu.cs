@@ -25,6 +25,11 @@ public sealed record AcseApdu(AcseKind Kind, ImmutableArray<BerElement> Fields) 
     /// <summary>Gets the client authentication value in an AARQ, or null when it is absent.</summary>
     public ImmutableArray<byte>? CallingAuthenticationValue => Find(AcseFieldTags.CallingAuthenticationValue) is { } element
         ? Unwrap(element, AcseFieldTags.AuthenticationGraphicString) : null;
+    /// <summary>Gets the sender AP-title carried by an AARQ or AARE.</summary>
+    public ImmutableArray<byte>? SystemTitle => Find(Kind == AcseKind.Aarq
+        ? AcseFieldTags.CallingApTitle : AcseFieldTags.RespondingApTitle) is { } element
+        && Kind is AcseKind.Aarq or AcseKind.Aare
+        ? Unwrap(element, BerEncoding.OctetStringTag) : null;
 
     /// <summary>Gets the raw AARE association-result code, or null when absent.</summary>
     public byte? Result => Find(AcseFieldTags.AssociationResult) is { } element
@@ -83,9 +88,24 @@ public sealed record AcseApdu(AcseKind Kind, ImmutableArray<BerElement> Fields) 
     /// <param name="authenticationMechanism">The final arc of the mechanism identifier, or null to omit authentication fields.</param>
     /// <param name="authenticationValue">The authentication bytes to carry without interpreting or verifying them.</param>
     public static AcseApdu Aarq(ReadOnlySpan<byte> initiateRequest, byte contextId = AcseDefaults.UncipheredLnContext, byte? authenticationMechanism = null, ReadOnlySpan<byte> authenticationValue = default)
+        => Aarq(initiateRequest, contextId, authenticationMechanism, authenticationValue, []);
+
+    /// <summary>Creates an LN association request carrying the client AP-title.</summary>
+    /// <param name="initiateRequest">The already encoded InitiateRequest or protected xDLMS APDU.</param>
+    /// <param name="contextId">The final arc of the application-context object identifier.</param>
+    /// <param name="authenticationMechanism">The final arc of the mechanism identifier, or null to omit authentication.</param>
+    /// <param name="authenticationValue">The authentication bytes to carry.</param>
+    /// <param name="systemTitle">The client AP-title, or an empty span to omit it.</param>
+    public static AcseApdu Aarq(ReadOnlySpan<byte> initiateRequest, byte contextId, byte? authenticationMechanism,
+        ReadOnlySpan<byte> authenticationValue, ReadOnlySpan<byte> systemTitle)
     {
         var fields = ImmutableArray.CreateBuilder<BerElement>();
         fields.Add(BerElement.Constructed(AcseFieldTags.ApplicationContextName, BerElement.Create(BerEncoding.ObjectIdentifierTag, DlmsObjectIdentifiers.ApplicationContext(contextId))));
+        if (!systemTitle.IsEmpty)
+        {
+            fields.Add(OctetString(AcseFieldTags.CallingApTitle, systemTitle));
+        }
+
         if (authenticationMechanism.HasValue)
         {
             fields.Add(BerElement.Create(AcseFieldTags.SenderAcseRequirements, AcseDefaults.AuthenticationUnusedBits, AcseDefaults.AuthenticationRequired));
@@ -112,6 +132,36 @@ public sealed record AcseApdu(AcseKind Kind, ImmutableArray<BerElement> Fields) 
             BerElement.Constructed(AcseFieldTags.UserInformation, BerElement.Create(BerEncoding.OctetStringTag, initiateResponse.ToArray()))
         ]
     );
+
+    /// <summary>Creates an LN association response carrying the server AP-title and authentication challenge.</summary>
+    /// <param name="initiateResponse">The already encoded InitiateResponse or protected xDLMS APDU.</param>
+    /// <param name="contextId">The final arc of the application-context object identifier.</param>
+    /// <param name="result">The association result code.</param>
+    /// <param name="diagnostic">The ACSE user-source diagnostic code.</param>
+    /// <param name="mechanism">The authentication mechanism identifier.</param>
+    /// <param name="challenge">The server authentication challenge.</param>
+    /// <param name="systemTitle">The server AP-title.</param>
+    public static AcseApdu Aare(ReadOnlySpan<byte> initiateResponse, byte contextId, byte result, byte diagnostic,
+        byte mechanism, ReadOnlySpan<byte> challenge, ReadOnlySpan<byte> systemTitle)
+    {
+        var response = Aare(initiateResponse, contextId, result, diagnostic);
+        return response with
+        {
+            Fields =
+            [
+                .. response.Fields[..^1],
+                OctetString(AcseFieldTags.RespondingApTitle, systemTitle),
+                BerElement.Create(AcseFieldTags.ResponderAcseRequirements, AcseDefaults.AuthenticationUnusedBits, AcseDefaults.AuthenticationRequired),
+                BerElement.Create(AcseFieldTags.RespondingMechanismName, DlmsObjectIdentifiers.AuthenticationMechanism(mechanism)),
+                BerElement.Constructed(AcseFieldTags.RespondingAuthenticationValue,
+                    BerElement.Create(AcseFieldTags.AuthenticationGraphicString, challenge.ToArray())),
+                response.Fields[^1]
+            ]
+        };
+    }
+
+    internal static BerElement OctetString(byte field, ReadOnlySpan<byte> value)
+        => BerElement.Constructed(field, BerElement.Create(BerEncoding.OctetStringTag, value.ToArray()));
     /// <summary>Creates a release request or response with an optional reason.</summary>
     /// <param name="response">Whether to create response-direction framing or a release response.</param>
     /// <param name="reason">The release reason, or null to omit it.</param>

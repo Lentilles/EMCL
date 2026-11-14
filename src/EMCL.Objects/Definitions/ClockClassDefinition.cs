@@ -17,14 +17,18 @@ public static class ClockClassDefinition
     /// <param name="maximumZone">The maximum permitted UTC deviation in minutes.</param>
     /// <returns>The class descriptor with the supplied member definitions.</returns>
     public static CosemClassDescriptor Create(DlmsType timestampType, int minimumZone, int maximumZone)
+        => Create(timestampType, timestampType, minimumZone, maximumZone);
+
+    internal static CosemClassDescriptor Create(DlmsType timestampType, DlmsType daylightSavingType, int minimumZone, int maximumZone)
     {
         DefinitionFactory.RequireTimestampType(timestampType);
+        DefinitionFactory.RequireTimestampType(daylightSavingType);
         return DefinitionFactory.Class(CosemClassIds.Clock, ClockMembers.Version0, "Clock",
             [DefinitionFactory.LogicalName(), new(ClockMembers.Attributes.Time, "time", timestampType, Constraint: DefinitionConstraints.DateTime),
                 new(ClockMembers.Attributes.TimeZone, "time_zone", DlmsType.Int16, Constraint: value => Range(value, minimumZone, maximumZone)),
                 new(ClockMembers.Attributes.Status, "status", DlmsType.UInt8),
-                new(ClockMembers.Attributes.DaylightSavingsBegin, "daylight_savings_begin", timestampType, Constraint: DefinitionConstraints.DateTime),
-                new(ClockMembers.Attributes.DaylightSavingsEnd, "daylight_savings_end", timestampType, Constraint: DefinitionConstraints.DateTime),
+                new(ClockMembers.Attributes.DaylightSavingsBegin, "daylight_savings_begin", daylightSavingType, Constraint: DefinitionConstraints.DateTime),
+                new(ClockMembers.Attributes.DaylightSavingsEnd, "daylight_savings_end", daylightSavingType, Constraint: DefinitionConstraints.DateTime),
                 new(ClockMembers.Attributes.DaylightSavingsDeviation, "daylight_savings_deviation", DlmsType.Int8, Constraint: value => Range(value, -MaximumDaylightSavingsDeviationMinutes, MaximumDaylightSavingsDeviationMinutes)),
                 new(ClockMembers.Attributes.DaylightSavingsEnabled, "daylight_savings_enabled", DlmsType.Boolean),
                 new(ClockMembers.Attributes.ClockBase, "clock_base", DlmsType.Enum, Constraint: value => Range(value, MinimumClockBase, MaximumClockBase))],

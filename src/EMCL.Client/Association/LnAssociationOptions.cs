@@ -1,9 +1,10 @@
 using System.Collections.Immutable;
 using EMCL.Protocol.Apdu;
+using EMCL.Protocol.Security;
 
 namespace EMCL.Client.Association;
 
-/// <summary>Configures an unciphered, confirmed LN association proposal.</summary>
+/// <summary>Configures a confirmed LN association proposal and optional APDU protection.</summary>
 public sealed record LnAssociationOptions
 {
     private const uint MaximumAdvertisedConformance = 0xFFFFFF;
@@ -42,6 +43,13 @@ public sealed record LnAssociationOptions
     {
         get; init;
     }
+    /// <summary>Gets the application-supplied protection and HLS protocol. Use this in place of a legacy authentication mode.</summary>
+    public ILnSecurityProtocol? Security
+    {
+        get; init;
+    }
+    /// <summary>Gets whether to protect the release exchange when a security protocol is configured.</summary>
+    public bool ProtectRelease { get; init; } = true;
     /// <summary>Gets immutable authentication secret octets; they are never added to diagnostics.</summary>
     public ImmutableArray<byte> Password { get; init; } = [];
     /// <summary>Overrides the Invoke-Id-And-Priority octet for the HLS ACTION exchange.</summary>
@@ -84,7 +92,9 @@ public sealed record LnAssociationOptions
 
     private void ValidateConformance()
     {
-        if ((Conformance & ~SupportedConformance) != DlmsConformance.None)
+        var supported = SupportedConformance | DlmsConformance.BlockTransferWithAction
+            | DlmsConformance.GeneralBlockTransfer | (Security is null ? DlmsConformance.None : DlmsConformance.GeneralProtection);
+        if ((Conformance & ~supported) != DlmsConformance.None)
         {
             throw new NotSupportedException("The client proposal contains unsupported conformance flags.");
         }
@@ -99,6 +109,12 @@ public sealed record LnAssociationOptions
 
     private void ValidateAuthentication()
     {
+        if (Security is not null && (Authentication != ClientAuthentication.None || !Password.IsDefaultOrEmpty
+            || (Conformance & DlmsConformance.Action) == DlmsConformance.None))
+        {
+            throw new ArgumentException("The security protocol supplies authentication and requires ACTION conformance.", nameof(Security));
+        }
+
         if (!Enum.IsDefined(Authentication))
         {
             throw new NotSupportedException("The selected authentication mechanism is not implemented.");

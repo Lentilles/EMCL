@@ -17,7 +17,7 @@ public sealed record ClientSessionOptions
     {
         get; init;
     }
-    /// <summary>Gets the maximum concurrent operations, from one through the invoke-ID capacity; one is the default.</summary>
+    /// <summary>Gets the maximum concurrent operations, from one through the invoke-ID capacity; general block transfer requires one.</summary>
     public int MaxConcurrentRequests { get; init; } = 1;
     /// <summary>Gets the bounded number of notifications waiting for application consumption; overflow faults the session.</summary>
     public int NotificationCapacity { get; init; } = 64;
@@ -68,6 +68,11 @@ public sealed record ClientSessionOptions
 
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxConcurrentRequests, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxConcurrentRequests, InvokeIdEncoding.Capacity);
+        if (MaxConcurrentRequests != 1 && (Association.Conformance & DlmsConformance.GeneralBlockTransfer) != 0)
+        {
+            throw new ArgumentException("General block transfer requires one request at a time.", nameof(MaxConcurrentRequests));
+        }
+
         LnAssociationOptions.ValidateInvokeIdAndPriority(FixedInvokeIdAndPriority, nameof(FixedInvokeIdAndPriority));
         if (FixedInvokeIdAndPriority.HasValue && MaxConcurrentRequests != 1)
         {

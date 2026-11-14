@@ -3,7 +3,9 @@
     <Description>Incremental A-XDR, xDLMS, and ACSE codecs independent of transport framing.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
     <ProjectReference Include="../EMCL.Core/EMCL.Core.csproj" />
     <InternalsVisibleTo Include="EMCL.Client" />
+    <InternalsVisibleTo Include="EMCL.Tests" />
   </ItemGroup>
 </Project>

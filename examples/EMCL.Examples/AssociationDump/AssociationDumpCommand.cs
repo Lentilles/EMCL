@@ -45,7 +45,7 @@ internal static class AssociationDumpCommand
         var negotiated = await client.AssociateAsync(cancellationToken);
         await output.WriteLineAsync("Association established. Reading object_list...");
         var association = configuration.Settings.Association;
-        var importer = new EmclBuilder { Limits = configuration.Settings.Limits }.CreateImporter();
+        var importer = new EmclBuilder(configuration.Settings.Profile) { Limits = configuration.Settings.Limits }.CreateImporter();
         await using var objectStream = await client.OpenObjectListAsync(importer, association.Version,
             configuration.AssociationName, cancellationToken);
         await output.WriteLineAsync($"The meter reports {objectStream.TotalCount} object_list entries.");

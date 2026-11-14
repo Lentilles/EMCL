@@ -30,7 +30,8 @@ public sealed partial class DlmsClientSession
         }
 
         int limit = SendLimit();
-        if ((long)normalHeader + data.Length <= limit)
+        if ((long)normalHeader + data.Length <= limit
+            && ProtectedLength(ApduTag.SetRequest, normalHeader + data.Length) <= limit)
         {
             await SendAsync(new LnRequest(pending.Invoke, operation), limit, deadline.Token, onAttempt).ConfigureAwait(false);
             return await ReceiveOperationAsync(pending, null, deadline.Token, deadline.ProcessingToken).ConfigureAwait(false);
@@ -38,6 +39,12 @@ public sealed partial class DlmsClientSession
 
         if ((negotiated!.Conformance & DlmsConformance.BlockTransferWithSet) == DlmsConformance.None)
         {
+            if (HasGeneralTransfer())
+            {
+                await SendApplicationAsync(new LnRequest(pending.Invoke, operation), limit, deadline.Token, onAttempt).ConfigureAwait(false);
+                return await ReceiveOperationAsync(pending, null, deadline.Token, deadline.ProcessingToken).ConfigureAwait(false);
+            }
+
             throw new NotSupportedException("The SET APDU exceeds the peer or local PDU limit and SET block transfer was not negotiated.");
         }
 
@@ -105,27 +112,35 @@ public sealed partial class DlmsClientSession
         var next = new SetBlockRequest(first.InvokeIdAndPriority, false, InitialSetBlockNumber, []);
         lock (codecGate)
         {
-            return (SetPayloadCapacity(limit, codec.EncodeBytes(first).Length),
-                SetPayloadCapacity(limit, codec.EncodeBytes(next).Length));
+            return (BlockPayloadCapacity(limit, codec.EncodeBytes(first).Length, ApduTag.SetRequest),
+                BlockPayloadCapacity(limit, codec.EncodeBytes(next).Length, ApduTag.SetRequest));
         }
     }
 
     // The empty encoded block includes a one-octet length. Growing raw-data may also grow that determinant.
-    private static int SetPayloadCapacity(int limit, int emptyBlockSize)
+    private int BlockPayloadCapacity(int limit, int emptyBlockSize, ApduTag tag, bool protect = true)
     {
-        int capacity = Math.Max(0, limit - emptyBlockSize);
-        while (capacity > 0)
+        int low = 0;
+        int high = Math.Max(0, limit - emptyBlockSize);
+        while (low < high)
         {
+            int capacity = low + (high - low + 1) / 2;
             int lengthSize = capacity < ShortLengthLimit ? 1
                 : 1 + (sizeof(int) * BitsPerOctet - BitOperations.LeadingZeroCount((uint)capacity) + BitsPerOctet - 1) / BitsPerOctet;
-            if ((long)emptyBlockSize - 1 + lengthSize + capacity <= limit)
+            long plainLength = (long)emptyBlockSize - 1 + lengthSize + capacity;
+            if (plainLength <= limit && (!protect || ProtectedLength(tag, (int)plainLength) <= limit))
             {
-                break;
+                low = capacity;
             }
-
-            capacity--;
+            else
+            {
+                high = capacity - 1;
+            }
         }
 
-        return capacity;
+        return low;
     }
+
+    private int ProtectedLength(ApduTag tag, int length)
+        => options.Association.Security?.GetProtectedLength((byte)tag, length, true) ?? length;
 }

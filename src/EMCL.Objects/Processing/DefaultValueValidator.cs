@@ -33,7 +33,14 @@ public sealed class DefaultValueValidator(ProtocolLimits? limits = null) : IValu
                 return "Method is not declared.";
             }
 
-            return method.ParameterType.HasValue && operation.Value?.Type != method.ParameterType ? "Method parameter type mismatch." : null;
+            if (method.ParameterType.HasValue && operation.Value?.Type != method.ParameterType)
+            {
+                return "Method parameter type mismatch.";
+            }
+
+            return method.ParameterConstraint is { } constraint
+                ? operation.Value is { } value ? constraint(value) : "Method parameter is missing."
+                : null;
         }
 
         var attr = cosemObject.Descriptor.Attributes.FirstOrDefault(a => a.Index == operation.Index);

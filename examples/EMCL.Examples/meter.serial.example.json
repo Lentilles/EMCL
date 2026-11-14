@@ -1,4 +1,5 @@
 {
+  "profile": "Cosem",
   "channel": {
     "connection": {
       "kind": "Serial",

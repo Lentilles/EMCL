@@ -750,7 +750,8 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
 
     private static bool IsDataNotificationFrame(HdlcFrame frame) => frame.IsUnnumberedInformation
         && frame.Information.Length > LlcHeader.Length
-        && frame.Information[LlcHeader.Length] == (byte)ApduTag.DataNotification;
+        && (ApduTag)frame.Information[LlcHeader.Length] is ApduTag.DataNotification
+            or ApduTag.GeneralGlobalCiphering or ApduTag.GeneralDedicatedCiphering or ApduTag.GeneralBlockTransfer;
 
     private bool ServerMatches(HdlcAddress source) => source == remote || remote.HasSameServerComponents(source);
 

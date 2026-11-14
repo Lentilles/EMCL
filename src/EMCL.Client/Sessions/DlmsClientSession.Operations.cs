@@ -106,7 +106,12 @@ public sealed partial class DlmsClientSession
                 return await ExecuteSetAsync(operation, pending, deadline, () => attempted = true).ConfigureAwait(false);
             }
 
-            await SendAsync(new LnRequest(pending.Invoke, operation), SendLimit(), deadline.Token,
+            if (operation.Kind == CosemOperationKind.Invoke)
+            {
+                return await ExecuteActionAsync(operation, pending, deadline, () => attempted = true).ConfigureAwait(false);
+            }
+
+            await SendApplicationAsync(new LnRequest(pending.Invoke, operation), SendLimit(), deadline.Token,
                 () => attempted = true).ConfigureAwait(false);
             return await ReceiveOperationAsync(pending, stream, deadline.Token, deadline.ProcessingToken)
                 .ConfigureAwait(false);
@@ -119,6 +124,10 @@ public sealed partial class DlmsClientSession
                 if (operation.Kind == CosemOperationKind.Write)
                 {
                     reported = new DlmsWriteUnconfirmedException(reported);
+                }
+                else if (operation.Kind == CosemOperationKind.Invoke)
+                {
+                    reported = new DlmsActionUnconfirmedException(reported);
                 }
 
                 Fault(reported);
@@ -233,6 +242,11 @@ public sealed partial class DlmsClientSession
             }
 
             return normal;
+        }
+
+        if (response is ActionBlock actionBlock)
+        {
+            return await ReceiveActionBlocksAsync(pending, actionBlock, cancellationToken, processingToken).ConfigureAwait(false);
         }
 
         return await ReceiveGetBlocksAsync(pending, (GetBlockResponse)response, stream, cancellationToken,

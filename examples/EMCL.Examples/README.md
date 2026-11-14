@@ -53,6 +53,8 @@ To use another configuration file, pass `--config /path/to/meter.json`. A relati
 
 Set the Association LN version explicitly in `association.version` (1 or 3); it must match the meter's actual association. It determines how access rights are interpreted. `logicalName` selects the association object. `logicalDeviceId` and `associationId` are local names for the catalog and permission snapshot, not connection addresses.
 
+Set the top-level `profile` to `Cosem` (default), `Spodes4`, or `Spodes5` to select the class definitions used during import. The `--demo` command also runs a SPODES 5 import and invokes the Special Days Table locally.
+
 `connectTimeoutSeconds` limits TCP connection establishment or Serial port opening; `requestTimeoutSeconds` covers the entire exchange, including all GET blocks. `limits` bounds size, nesting, collections, and block count. Reading requires only `"conformance": "Get, BlockTransferWithGet"`.
 
 To reproduce the exact bit set from another AARQ, set `"advertisedConformanceHex": "621EDF"` in `association`. This changes the 24-bit proposed Conformance in AARQ. The `conformance` field still lists the operations implemented by the client; each of its bits must be included in the proposed mask. Named flags for other services are available in `DlmsConformance`, but their operations are not implemented yet.

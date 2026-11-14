@@ -13,6 +13,14 @@ public static class AcseFieldTags
     public const byte SenderAcseRequirements = 0x8a;
     /// <summary>The authentication mechanism-name field.</summary>
     public const byte MechanismName = 0x8b;
+    /// <summary>The calling AP-title field in an AARQ.</summary>
+    public const byte CallingApTitle = 0xa6;
+    /// <summary>The responding AP-title field in an AARE.</summary>
+    public const byte RespondingApTitle = 0xa4;
+    /// <summary>The responder ACSE requirements field.</summary>
+    public const byte ResponderAcseRequirements = 0x88;
+    /// <summary>The responding mechanism-name field in an AARE.</summary>
+    public const byte RespondingMechanismName = 0x89;
     /// <summary>The calling-authentication-value field.</summary>
     public const byte CallingAuthenticationValue = 0xac;
     /// <summary>The responding-authentication-value field in an AARE.</summary>

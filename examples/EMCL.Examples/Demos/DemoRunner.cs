@@ -29,6 +29,7 @@ internal static class DemoRunner
     internal static async Task RunAsync()
     {
         await ClientSessionExample.RunAsync();
+        await RunSpodesAsync();
         var builder = new EmclBuilder();
         var device = builder.Build("meter-1");
         await RegisterExamples.RunAsync(device);
@@ -70,5 +71,28 @@ internal static class DemoRunner
         {
             Console.WriteLine($"Custom channel APDU: {(await endpoint.ReceiveAsync())!.GetType().Name}");
         }
+    }
+
+    private static async Task RunSpodesAsync()
+    {
+        var builder = new EmclBuilder(CosemProfile.Spodes5);
+        var model = builder.Build("spodes-model");
+        var table = model.Add(CosemClassIds.SpecialDaysTable, 0, LogicalName.Parse("0.0.11.0.0.255"));
+        var rights = new ObjectAccessRights([new(2, 1, [])], [new(1, 1)]);
+        var list = DlmsValue.Array(AssociationHandler.Entry(table, rights));
+        var binary = new ReadOnlySequence<byte>(new AxdrCodec().EncodeBytes(list));
+        var imported = builder.CreateImporter().Import(binary, "spodes-meter", "local", AssociationLnMembers.Version1);
+        var device = builder.Build("spodes-meter", imported);
+        var day = DlmsValue.Structure(DlmsValue.Number(DlmsType.UInt16, 1),
+            DlmsValue.Octets([0xff, 0xff, 1, 1, 0xff]),
+            DlmsValue.Number(DlmsType.UInt8, 2));
+        var result = await device.Pipeline.ExecuteAsync(new(CosemOperationKind.Invoke,
+            CosemClassIds.SpecialDaysTable, table.LogicalName, 1, day), device.CreateContext());
+        if (result.Error != CosemResultCode.Success)
+        {
+            throw new InvalidOperationException($"SPODES special day insertion failed: {result.Error}");
+        }
+
+        Console.WriteLine($"SPODES 5 imported {table.Descriptor.Name} and inserted a special day.");
     }
 }

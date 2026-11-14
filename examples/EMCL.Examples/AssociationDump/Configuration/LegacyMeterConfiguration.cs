@@ -1,9 +1,14 @@
 using EMCL.Core.Codecs;
+using EMCL.Objects.Definitions;
 
 namespace EMCL.Examples.AssociationDump.Configuration;
 
 internal sealed record LegacyMeterConfiguration
 {
+    public CosemProfile Profile
+    {
+        get; init;
+    }
     public required LegacyConnectionSettings Connection
     {
         get; init;
@@ -49,6 +54,7 @@ internal sealed record LegacyMeterConfiguration
                 }
             },
             Association = Association,
+            Profile = Profile,
             Output = Output,
             Limits = Limits
         };

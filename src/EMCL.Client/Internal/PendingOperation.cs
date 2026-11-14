@@ -19,6 +19,10 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind, boo
     private uint expectedBlockNumber = FirstBlockNumber;
     private bool setBlocksStarted;
     private bool lastSetBlock;
+    private bool actionRequestBlocks;
+    private bool actionResponseBlocks;
+    private bool lastActionRequestBlock;
+    private uint expectedActionBlock = FirstBlockNumber;
 
     internal byte Invoke { get; } = invoke;
     internal byte Id => (byte)(Invoke & InvokeIdEncoding.IdMask);
@@ -50,6 +54,10 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind, boo
                 => AcceptSetBlock(block),
             GetBlockResponse block when kind == CosemOperationKind.Read
                 => AcceptGetBlock(block),
+            ActionNextBlock { Response: true } next when kind == CosemOperationKind.Invoke
+                && actionRequestBlocks && !lastActionRequestBlock && next.BlockNumber == expectedActionBlock => false,
+            ActionBlock { Response: true } block when kind == CosemOperationKind.Invoke
+                && (!actionRequestBlocks || lastActionRequestBlock) => AcceptActionBlock(block),
             _ => throw new DlmsProtocolException("The response service does not match the request.")
         };
 
@@ -67,6 +75,11 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind, boo
 
     private bool AcceptNormalResponse(LnResponse response)
     {
+        if (actionResponseBlocks || actionRequestBlocks && !lastActionRequestBlock && response.Result.Error == CosemResultCode.Success)
+        {
+            throw new DlmsProtocolException("The ACTION result arrived before the required blocks completed.");
+        }
+
         if (setBlocksStarted && response.Result.Error == CosemResultCode.Success)
         {
             throw new DlmsProtocolException("A SET block transfer requires a final block result.");
@@ -74,6 +87,28 @@ internal sealed class PendingOperation(byte invoke, CosemOperationKind kind, boo
 
         return true;
     }
+
+    private bool AcceptActionBlock(ActionBlock block)
+    {
+        if (block.BlockNumber != expectedActionBlock)
+        {
+            throw new DlmsProtocolException("The ACTION response block number is out of sequence.");
+        }
+
+        expectedActionBlock = checked(expectedActionBlock + 1);
+        actionResponseBlocks = true;
+        return block.LastBlock;
+    }
+
+    internal void PrepareActionRequestBlock(uint number, bool last)
+    {
+        actionRequestBlocks = true;
+        lastActionRequestBlock = last;
+        expectedActionBlock = last ? FirstBlockNumber : number;
+        waiting = true;
+    }
+
+    internal void PrepareActionResponseBlock() => waiting = true;
 
     private bool AcceptSetBlock(SetBlockResponse block)
     {

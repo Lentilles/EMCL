@@ -50,6 +50,8 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
                 ApduTag.GetRequest or ApduTag.SetRequest or ApduTag.ActionRequest => ReadRequest(tag, ref reader, ref budget),
                 ApduTag.GetResponse or ApduTag.SetResponse or ApduTag.ActionResponse => ReadResponse(tag, ref reader, ref budget),
                 ApduTag.DataNotification => ReadNotification(ref reader, ref budget),
+                ApduTag.DataNotificationConfirm => new DataNotificationConfirm(reader.U32(), ReadNotificationTime(ref reader)),
+                ApduTag.GeneralBlockTransfer => ReadGeneralBlock(ref reader),
                 ApduTag.InitiateRequest => ReadInitiateRequest(ref reader),
                 ApduTag.InitiateResponse => ReadInitiateResponse(ref reader),
                 _ => throw new WireException(DecodeStatus.Unsupported, $"Unsupported APDU tag {(byte)tag:X2}.")
@@ -147,6 +149,15 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
 
                 WireWriter.U32(writer, block.BlockNumber);
                 break;
+            case ActionBlock block:
+                WriteActionBlock(block, writer);
+                break;
+            case ActionNextBlock next:
+                WireWriter.Byte(writer, (byte)(next.Response ? ApduTag.ActionResponse : ApduTag.ActionRequest));
+                WireWriter.Byte(writer, next.Response ? ApduEncoding.ActionResponseNextBlock : ApduEncoding.ActionRequestNextBlock);
+                WireWriter.Byte(writer, next.InvokeIdAndPriority);
+                WireWriter.U32(writer, next.BlockNumber);
+                break;
             case LnResponse response:
                 WriteLnResponse(response, writer, ref budget);
                 break;
@@ -155,6 +166,12 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
                 break;
             case DataNotification notification:
                 WriteDataNotification(notification, writer, ref budget);
+                break;
+            case DataNotificationConfirm confirmation:
+                WriteNotificationHeader(ApduTag.DataNotificationConfirm, confirmation.LongInvokeIdAndPriority, confirmation.DateTime, writer);
+                break;
+            case GeneralBlockTransfer block:
+                WriteGeneralBlock(block, writer);
                 break;
             case InitiateRequest initiate:
                 WriteInitiateRequest(initiate, writer);
@@ -209,6 +226,19 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
     private DlmsApdu ReadRequest(ApduTag tag, ref WireReader reader, ref int budget)
     {
         byte choice = reader.Byte(), invoke = reader.Byte();
+        if (tag == ApduTag.ActionRequest && choice == ApduEncoding.ActionRequestNextBlock)
+        {
+            return new ActionNextBlock(invoke, false, reader.U32());
+        }
+
+        if (tag == ApduTag.ActionRequest && choice is ApduEncoding.ActionFirstBlock or ApduEncoding.ActionRequestBlock)
+        {
+            CosemOperation? method = choice == ApduEncoding.ActionFirstBlock
+                ? new(CosemOperationKind.Invoke, reader.U16(), LogicalName.FromBytes(reader.Take(LogicalName.EncodedLength)), (sbyte)reader.Byte())
+                : null;
+            return ReadActionBlock(invoke, false, method, ref reader);
+        }
+
         if (tag == ApduTag.GetRequest && choice == ApduEncoding.GetNextChoice)
         {
             return new GetNextRequest(invoke, reader.U32());
@@ -266,6 +296,16 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
     private DlmsApdu ReadResponse(ApduTag tag, ref WireReader reader, ref int budget)
     {
         byte choice = reader.Byte(), invoke = reader.Byte();
+        if (tag == ApduTag.ActionResponse && choice == ApduEncoding.ActionResponseNextBlock)
+        {
+            return new ActionNextBlock(invoke, true, reader.U32());
+        }
+
+        if (tag == ApduTag.ActionResponse && choice == ApduEncoding.ActionResponseBlock)
+        {
+            return ReadActionBlock(invoke, true, null, ref reader);
+        }
+
         if (tag == ApduTag.SetResponse && choice is ApduEncoding.SetBlockResponseChoice or ApduEncoding.SetLastBlockResponseChoice)
         {
             CosemResultCode? result = choice == ApduEncoding.SetLastBlockResponseChoice ? (CosemResultCode)reader.Byte() : null;
@@ -318,13 +358,19 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
     private DlmsApdu ReadNotification(ref WireReader reader, ref int budget)
     {
         uint invoke = reader.U32();
+        var dateTime = ReadNotificationTime(ref reader);
+        return new DataNotification(invoke, dateTime, axdr.Read(ref reader, 0, ref budget));
+    }
+
+    private static ImmutableArray<byte> ReadNotificationTime(ref WireReader reader)
+    {
         int count = reader.Length(DlmsValueSizes.DateTime);
         if (count is not (0 or DlmsValueSizes.DateTime))
         {
             throw new WireException(DecodeStatus.InvalidData, "Notification date-time must be absent or 12 octets.");
         }
 
-        return new DataNotification(invoke, reader.Take(count).ToArray().ToImmutableArray(), axdr.Read(ref reader, 0, ref budget));
+        return reader.Take(count).ToArray().ToImmutableArray();
     }
 
     private DlmsApdu ReadInitiateRequest(ref WireReader reader)
@@ -448,16 +494,69 @@ public sealed class ApduCodec : IIncrementalCodec<DlmsApdu>
 
     private void WriteDataNotification(DataNotification notification, IBufferWriter<byte> writer, ref int budget)
     {
-        if (notification.DateTime.Length is not (0 or DlmsValueSizes.DateTime))
+        WriteNotificationHeader(ApduTag.DataNotification, notification.LongInvokeIdAndPriority, notification.DateTime, writer);
+        axdr.Write(notification.Body, writer, 0, ref budget);
+    }
+
+    private static void WriteNotificationHeader(ApduTag tag, uint invoke, ImmutableArray<byte> time, IBufferWriter<byte> writer)
+    {
+        if (time.Length is not (0 or DlmsValueSizes.DateTime))
         {
             throw new ArgumentException("Invalid notification date-time length.");
         }
 
-        WireWriter.Byte(writer, (byte)ApduTag.DataNotification);
-        WireWriter.U32(writer, notification.LongInvokeIdAndPriority);
-        WireWriter.Length(writer, notification.DateTime.Length);
-        WireWriter.Bytes(writer, notification.DateTime.AsSpan());
-        axdr.Write(notification.Body, writer, 0, ref budget);
+        WireWriter.Byte(writer, (byte)tag);
+        WireWriter.U32(writer, invoke);
+        WireWriter.Length(writer, time.Length);
+        WireWriter.Bytes(writer, time.AsSpan());
+    }
+
+    private ActionBlock ReadActionBlock(byte invoke, bool response, CosemOperation? method, ref WireReader reader)
+    {
+        bool last = Presence(ref reader);
+        uint number = reader.U32();
+        return new(invoke, response, last, number,
+            reader.Take(reader.Length(limits.MaxMessageBytes)).ToArray().ToImmutableArray(), method);
+    }
+
+    private static void WriteActionBlock(ActionBlock block, IBufferWriter<byte> writer)
+    {
+        if (block.Method is { } method && (block.Response || method.Kind != CosemOperationKind.Invoke
+            || method.Value is not null || method.Selection is not null))
+        {
+            throw new ArgumentException("Only the first request block can carry an ACTION method descriptor.");
+        }
+
+        WireWriter.Byte(writer, (byte)(block.Response ? ApduTag.ActionResponse : ApduTag.ActionRequest));
+        WireWriter.Byte(writer, block.Response ? ApduEncoding.ActionResponseBlock
+            : block.Method is null ? ApduEncoding.ActionRequestBlock : ApduEncoding.ActionFirstBlock);
+        WireWriter.Byte(writer, block.InvokeIdAndPriority);
+        if (block.Method is { } operation)
+        {
+            WireWriter.U16(writer, operation.ClassId);
+            WireWriter.Bytes(writer, operation.LogicalName.ToBytes());
+            WireWriter.Byte(writer, (byte)operation.Index);
+        }
+
+        WriteSetBlock(block.LastBlock, block.BlockNumber, block.Data, writer);
+    }
+
+    private GeneralBlockTransfer ReadGeneralBlock(ref WireReader reader)
+    {
+        byte control = reader.Byte();
+        return new((control & 0x80) != 0, (control & 0x40) != 0, (byte)(control & 0x3f), reader.U16(),
+            reader.U16(), reader.Take(reader.Length(limits.MaxMessageBytes)).ToArray().ToImmutableArray());
+    }
+
+    private static void WriteGeneralBlock(GeneralBlockTransfer block, IBufferWriter<byte> writer)
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(block.WindowSize, (byte)0x3f);
+        WireWriter.Byte(writer, (byte)ApduTag.GeneralBlockTransfer);
+        WireWriter.Byte(writer, (byte)((block.LastBlock ? 0x80 : 0) | (block.Streaming ? 0x40 : 0) | block.WindowSize));
+        WireWriter.U16(writer, block.BlockNumber);
+        WireWriter.U16(writer, block.BlockNumberAcknowledged);
+        WireWriter.Length(writer, block.Data.Length);
+        WireWriter.Bytes(writer, block.Data.AsSpan());
     }
 
     private static void WriteInitiateRequest(InitiateRequest initiate, IBufferWriter<byte> writer)

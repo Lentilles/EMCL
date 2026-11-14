@@ -11,9 +11,14 @@ internal static class DlmsObjectIdentifiers
 
     private static byte[] Append(ReadOnlySpan<byte> prefix, byte finalArc)
     {
-        var result = new byte[prefix.Length + 1];
+        var result = new byte[prefix.Length + (finalArc < 128 ? 1 : 2)];
         prefix.CopyTo(result);
-        result[^1] = finalArc;
+        if (finalArc >= 128)
+        {
+            result[^2] = 0x81;
+        }
+
+        result[^1] = (byte)(finalArc & 0x7f);
         return result;
     }
 }

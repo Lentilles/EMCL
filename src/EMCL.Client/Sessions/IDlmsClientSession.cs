@@ -33,6 +33,7 @@ public interface IDlmsClientSession : IAsyncDisposable
     /// <param name="cancellationToken">Cancellation of queue waiting and execution.</param>
     /// <returns>The response, with GET blocks automatically assembled and oversized SET values transferred in negotiated blocks.</returns>
     /// <exception cref="EMCL.Client.Exceptions.DlmsWriteUnconfirmedException">A SET was attempted without a validated final result; no retry is performed.</exception>
+    /// <exception cref="EMCL.Client.Exceptions.DlmsActionUnconfirmedException">An ACTION was attempted without a validated final result.</exception>
     ValueTask<LnResponse> ExecuteAsync(CosemOperation operation, CancellationToken cancellationToken = default);
     /// <summary>Reads an attribute and throws a DlmsOperationException on a remote access error.</summary>
     /// <param name="classId">The remote interface-class identifier.</param>
@@ -72,6 +73,7 @@ public interface IDlmsClientSession : IAsyncDisposable
     /// <param name="parameter">An optional typed method parameter.</param>
     /// <param name="cancellationToken">Cancellation of queue waiting and execution.</param>
     /// <returns>The optional return value.</returns>
+    /// <exception cref="EMCL.Client.Exceptions.DlmsActionUnconfirmedException">An ACTION was attempted without a validated final result.</exception>
     ValueTask<DlmsValue?> ActionAsync(ushort classId, LogicalName logicalName, sbyte method,
         DlmsValue? parameter = null, CancellationToken cancellationToken = default);
     /// <summary>Starts one object_list GET and returns a single-use stream after its array count is known.</summary>
@@ -98,4 +100,10 @@ public interface IDlmsClientSession : IAsyncDisposable
     /// <param name="cancellationToken">Cancellation of notification consumption, without canceling the session.</param>
     /// <returns>Notifications until release, disposal, or session failure; concurrent consumers divide the sequence.</returns>
     IAsyncEnumerable<DataNotification> ReadNotificationsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Confirms application processing of a confirmed DataNotification.</summary>
+    /// <param name="notification">The original notification instance from this session.</param>
+    /// <param name="cancellationToken">Cancellation of the confirmation exchange.</param>
+    ValueTask ConfirmNotificationAsync(DataNotification notification, CancellationToken cancellationToken = default)
+        => ValueTask.FromException(new NotSupportedException("This session does not send notification confirmations."));
 }

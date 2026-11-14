@@ -36,6 +36,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
     private NegotiatedAssociation? negotiated;
     private Exception? failure;
     private readonly TaskCompletionSource associationReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource associationAuthenticated = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task? receiveTask;
     private Task cancellationTask = Task.CompletedTask;
     private Task? disposeTask;
@@ -108,12 +109,6 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
     public async ValueTask<NegotiatedAssociation> AssociateAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var request = negotiator.CreateRequest(options.Association);
-        if (request.Kind != AcseKind.Aarq)
-        {
-            throw new ArgumentException("The association negotiator must produce an AARQ.");
-        }
-
         if (options.AssociationRetryDelay is not null && channel is not IAssociationRequestRetransmission)
         {
             throw new NotSupportedException("Association AARQ retry requires a channel with safe link-layer retransmission.");
@@ -132,6 +127,12 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
 
         try
         {
+            var request = negotiator.CreateRequest(options.Association);
+            if (request.Kind != AcseKind.Aarq)
+            {
+                throw new ArgumentException("The association negotiator must produce an AARQ.");
+            }
+
             var response = await ExchangeAssociationRequestAsync(request, pending.Response.Task, deadline.Token)
                 .ConfigureAwait(false);
             var context = negotiator.AcceptResponse(response, options.Association);
@@ -155,6 +156,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
             {
                 RequireState(ClientSessionState.Associating);
                 state = ClientSessionState.Associated;
+                associationAuthenticated.TrySetResult();
             }
 
             return context;
@@ -242,13 +244,14 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
         {
             RequireState(ClientSessionState.Associated);
             state = ClientSessionState.Releasing;
-            draining = idle.Task;
+            draining = Task.WhenAll(idle.Task, confirmationsIdle.Task);
         }
 
         try
         {
             await draining.WaitAsync(deadline.Token).ConfigureAwait(false);
-            var request = negotiator.CreateReleaseRequest();
+            var request = negotiator is LnAssociationNegotiator standard
+                ? standard.CreateReleaseRequest(options.Association) : negotiator.CreateReleaseRequest();
             if (request.Kind != AcseKind.Rlrq)
             {
                 throw new ArgumentException("The association negotiator must produce an RLRQ.");
@@ -263,7 +266,14 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
 
             await SendAsync(request, SendLimit(), deadline.Token).ConfigureAwait(false);
             var response = await pending.Response.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
-            negotiator.AcceptReleaseResponse(response);
+            if (negotiator is LnAssociationNegotiator releaseNegotiator)
+            {
+                releaseNegotiator.AcceptReleaseResponse(response, options.Association);
+            }
+            else
+            {
+                negotiator.AcceptReleaseResponse(response);
+            }
             lock (gate)
             {
                 RequireState(ClientSessionState.Releasing);
@@ -345,7 +355,7 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
     {
         try
         {
-            await Task.WhenAll(receiveTask ?? Task.CompletedTask, cancellationTask, callsIdle.Task).ConfigureAwait(false);
+            await Task.WhenAll(receiveTask ?? Task.CompletedTask, cancellationTask, callsIdle.Task, confirmationsIdle.Task).ConfigureAwait(false);
         }
         finally
         {
@@ -361,6 +371,8 @@ public sealed partial class DlmsClientSession : IDlmsClientSession
             {
                 sendLock.Release();
                 sendLock.Dispose();
+                generalSendGate.Dispose();
+                protectedSendGate.Dispose();
                 slots.Dispose();
                 lifetime.Dispose();
             }

@@ -10,6 +10,7 @@ using EMCL.Objects.Processing;
 using EMCL.Objects.ProfileGeneric;
 using EMCL.Objects.Registers;
 using EMCL.Objects.Definitions;
+using EMCL.Objects.Spodes;
 
 namespace EMCL.Composition;
 
@@ -49,10 +50,26 @@ public sealed class EmclBuilder
     public Func<IDemandValueCalculator> DemandCalculatorFactory { get; set; } = () => new ArithmeticMeanDemandCalculator();
 
     /// <summary>Creates a builder with the supported class definitions registered.</summary>
-    public EmclBuilder()
+    public EmclBuilder() : this(CosemProfile.Cosem)
     {
-        Definitions.AddProvider(StandardDefinitions.CreateProvider());
     }
+
+    /// <summary>Creates a builder for one information model.</summary>
+    /// <param name="profile">The profile used by local creation and association import.</param>
+    public EmclBuilder(CosemProfile profile)
+    {
+        Profile = profile;
+        Definitions.AddProvider(StandardDefinitions.CreateProvider(profile));
+    }
+
+    /// <summary>Gets the information model selected for this builder.</summary>
+    public CosemProfile Profile
+    {
+        get;
+    }
+
+    /// <summary>Gets or sets the application services used by SPODES device objects.</summary>
+    public SpodesLocalOptions Spodes { get; set; } = new();
 
     /// <summary>Creates an importer using the current definitions, object factory, and limits.</summary>
     /// <returns>An importer using the current builder configuration.</returns>
@@ -82,14 +99,24 @@ public sealed class EmclBuilder
             associations.Bind(associationObject ?? LogicalName.Parse("0.0.40.0.0.255"), imported.Access);
         }
 
-        return new(
+        var dispatcher = new ObjectDispatcher(catalog, handlers, Validator ?? new DefaultValueValidator(Limits),
+            Converter, AccessPolicy, Middleware, serializeDevice: Profile != CosemProfile.Cosem);
+        var device = new EmclDevice(
             catalog,
             Definitions,
             Factory,
             handlers,
             associations,
-            new ObjectDispatcher(catalog, handlers, Validator ?? new DefaultValueValidator(Limits), Converter, AccessPolicy, Middleware),
+            dispatcher,
             imported?.Access
         );
+        if (Profile != CosemProfile.Cosem)
+        {
+            OperationDelegate execute = (operation, context, token) => device.Pipeline.ExecuteAsync(operation, context, token);
+            SpodesLocalRegistration.Register(Profile, handlers, execute, Spodes, Limits, MeasurementTimeProvider, AccessPolicy);
+            device.SpodesAutomation = new(catalog, execute, handlers);
+        }
+
+        return device;
     }
 }

@@ -23,6 +23,7 @@ internal static class ConfigurationFile
         Converters =
         {
             new JsonStringEnumConverter<ClientAuthentication>(allowIntegerValues: false),
+            new JsonStringEnumConverter<CosemProfile>(allowIntegerValues: false),
             new JsonStringEnumConverter<DlmsConformance>(allowIntegerValues: false),
             new JsonStringEnumConverter<MeterTransport>(allowIntegerValues: false),
             new JsonStringEnumConverter<Parity>(allowIntegerValues: false),

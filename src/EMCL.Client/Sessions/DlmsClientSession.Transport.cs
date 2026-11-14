@@ -17,11 +17,28 @@ public sealed partial class DlmsClientSession
             bytes = codec.EncodeBytes(apdu);
         }
 
-        if (bytes.Length > maximumBytes)
+        bool protect = apdu is not (AcseApdu or GeneralBlockTransfer) && options.Association.Security is not null;
+        if (protect)
         {
-            throw new ArgumentException("The encoded APDU exceeds the peer or local PDU limit.", nameof(apdu));
+            await protectedSendGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        try
+        {
+            await SendWireAsync(apdu, bytes, maximumBytes, cancellationToken, onAttempt).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (protect)
+            {
+                protectedSendGate.Release();
+            }
+        }
+    }
+
+    private async ValueTask SendWireAsync(DlmsApdu apdu, byte[] bytes, int maximumBytes, CancellationToken cancellationToken,
+        Action? onAttempt)
+    {
         await sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -35,12 +52,28 @@ public sealed partial class DlmsClientSession
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            if (apdu is not (AcseApdu or GeneralBlockTransfer) && options.Association.Security is { } security)
+            {
+                bool established = State != ClientSessionState.Associating;
+                CheckSendSize(security.GetProtectedLength(bytes[0], bytes.Length, established), maximumBytes);
+                bytes = security.Protect(bytes, established);
+            }
+
+            CheckSendSize(bytes.Length, maximumBytes);
             onAttempt?.Invoke();
             await channel.SendAsync(bytes, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             sendLock.Release();
+        }
+    }
+
+    private static void CheckSendSize(int length, int limit)
+    {
+        if (length > limit)
+        {
+            throw new ArgumentException("The encoded APDU exceeds the peer or local PDU limit.", "apdu");
         }
     }
 
@@ -61,25 +94,30 @@ public sealed partial class DlmsClientSession
                     throw new DlmsProtocolException("The received APDU exceeds the advertised client or local PDU limit.");
                 }
 
-                DecodeResult<DlmsApdu> decoded;
-                lock (codecGate)
+                bool authenticating = options.Association.Security is not null && State == ClientSessionState.Associating;
+                var apdu = DecodeApplication(payload.Value, !authenticating);
+                GeneralConfirmation? confirmation = null;
+                if (apdu is GeneralBlockTransfer block)
                 {
-                    decoded = codec.Decode(new ReadOnlySequence<byte>(payload.Value));
+                    (apdu, confirmation) = await ReceiveGeneralBlockAsync(block, authenticating, lifetimeToken).ConfigureAwait(false);
+                    if (apdu is null)
+                    {
+                        continue;
+                    }
                 }
 
-                if (decoded.Status != DecodeStatus.Done || decoded.Consumed != payload.Value.Length || decoded.Value == null)
-                {
-                    throw new DlmsProtocolException($"The channel did not deliver exactly one supported APDU: {decoded.Status}.");
-                }
-
-                if (Route(decoded.Value))
+                if (Route(apdu, confirmation))
                 {
                     return;
                 }
 
-                if (decoded.Value is AcseApdu { Kind: AcseKind.Aare })
+                if (apdu is AcseApdu { Kind: AcseKind.Aare })
                 {
                     await associationReady.Task.WaitAsync(lifetimeToken).ConfigureAwait(false);
+                }
+                else if (authenticating && apdu is LnResponse { Kind: EMCL.Core.Operations.CosemOperationKind.Invoke })
+                {
+                    await associationAuthenticated.Task.WaitAsync(lifetimeToken).ConfigureAwait(false);
                 }
             }
         }
@@ -93,7 +131,31 @@ public sealed partial class DlmsClientSession
         }
     }
 
-    private bool Route(DlmsApdu apdu)
+    private DlmsApdu DecodeApplication(ReadOnlyMemory<byte> payload, bool established)
+    {
+        ReadOnlyMemory<byte> clear = payload;
+        if (clear.Length > 0 && !Enum.IsDefined((AcseKind)clear.Span[0])
+            && clear.Span[0] != (byte)ApduTag.GeneralBlockTransfer && options.Association.Security is { } security)
+        {
+            clear = security.Unprotect(clear.Span, established);
+            if (clear.Length > options.Limits.MaxMessageBytes || clear.Length > 0
+                && (Enum.IsDefined((AcseKind)clear.Span[0]) || clear.Span[0] == (byte)ApduTag.GeneralBlockTransfer))
+            {
+                throw new DlmsProtocolException("The protection protocol returned an invalid xDLMS APDU.");
+            }
+        }
+
+        DecodeResult<DlmsApdu> decoded;
+        lock (codecGate)
+        {
+            decoded = codec.Decode(new ReadOnlySequence<byte>(clear));
+        }
+
+        return decoded.Status == DecodeStatus.Done && decoded.Consumed == clear.Length && decoded.Value is { } apdu
+            ? apdu : throw new DlmsProtocolException($"The channel did not deliver exactly one supported APDU: {decoded.Status}.");
+    }
+
+    private bool Route(DlmsApdu apdu, GeneralConfirmation? confirmation)
     {
         lock (gate)
         {
@@ -108,6 +170,25 @@ public sealed partial class DlmsClientSession
                     && (context.Conformance & DlmsConformance.DataNotification) == DlmsConformance.None)
                 {
                     throw new DlmsProtocolException("A DataNotification was received outside the negotiated context.");
+                }
+
+                if (notification.IsConfirmed)
+                {
+                    var repeated = notificationConfirmations.Keys.FirstOrDefault(previous =>
+                        previous.LongInvokeIdAndPriority == notification.LongInvokeIdAndPriority
+                        && previous.DateTime.AsSpan().SequenceEqual(notification.DateTime.AsSpan()));
+                    if (repeated is not null)
+                    {
+                        notificationConfirmations[repeated] = confirmation;
+                        return false;
+                    }
+
+                    if (notificationConfirmations.Count >= options.NotificationCapacity)
+                    {
+                        throw new DlmsProtocolException("The pending notification confirmation limit was reached.");
+                    }
+
+                    notificationConfirmations.Add(notification, confirmation);
                 }
 
                 if (!notifications.Writer.TryWrite(notification))
@@ -130,11 +211,21 @@ public sealed partial class DlmsClientSession
                 return acse.Kind == AcseKind.Rlre;
             }
 
+            lock (generalGate)
+            {
+                if (generalOutgoing is not null)
+                {
+                    throw new DlmsProtocolException("The peer ended a general block exchange with a normal APDU.");
+                }
+            }
+
             byte invoke = apdu switch
             {
                 LnResponse response => response.InvokeIdAndPriority,
                 GetBlockResponse block => block.InvokeIdAndPriority,
                 SetBlockResponse block => block.InvokeIdAndPriority,
+                ActionBlock block => block.InvokeIdAndPriority,
+                ActionNextBlock next => next.InvokeIdAndPriority,
                 _ => throw new DlmsProtocolException("The peer sent an unexpected application service.")
             };
             byte id = (byte)(invoke & InvokeIdEncoding.IdMask);

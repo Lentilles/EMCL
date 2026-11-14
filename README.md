@@ -6,13 +6,16 @@ The library is distributed under the [MIT license](LICENSE).
 
 ## Features
 
-- Logical Name client associations: GET/SET/ACTION, selective access, GET and SET block transfer, notifications, and None, LLS, and HLS High (AES-128) authentication.
+- Logical Name client associations with GET, SET, ACTION, selective access, service-specific block transfer and General Block Transfer.
+- Pluggable APDU security with AES-GCM/GMAC and SPODES Kuznyechik CTR/CMAC implementations.
+- COSEM, SPODES 4 and preliminary SPODES 5 profiles. The SPODES profiles resolve 26 and 57 exact class/version pairs respectively.
+- Confirmed and unconfirmed Push on an associated client or a complete-APDU channel, including Wrapper/TCP, Wrapper/UDP and application-owned NIDD.
 - Association LN v1/v3 reading: full catalog import or streaming `object_list` entries with progress reporting.
 - Wrapper and HDLC over TCP, Serial, or a custom transport; console export of the catalog and access rights to JSON.
 - Local models for Data, Register, Extended Register, Demand Register, Register Activation, Clock, Profile Generic, and Association LN; custom classes and handlers.
 - Independent A-XDR, ACSE, and LN APDU codecs with data size and nesting limits.
 
-Short Name, protected APDUs, HLS SHA-256/GMAC, ACTION block transfer, GBT, and a ready-to-use server session are not implemented yet. The HDLC channel performs SNRM/UA setup and I/RR exchange; each outgoing APDU must fit a single negotiated information frame. See the [capability matrix](docs/COVERAGE.md) for details.
+The HDLC channel performs SNRM/UA setup and I/RR exchange. Each outgoing APDU must fit a single negotiated information frame. Server applications supply their own session and hardware adapters. See the [capability matrix](docs/COVERAGE.md) for details.
 
 ## Contents
 
@@ -21,13 +24,14 @@ Short Name, protected APDUs, HLS SHA-256/GMAC, ACTION block transfer, GBT, and a
 - [Exporting a real meter association](#exporting-a-real-meter-association)
 - [Repository structure](#repository-structure) · [Assemblies](#assemblies)
 - [Quick example](#quick-example) · [Association import](#association-import)
+- [SPODES profiles](#spodes-profiles) · [Pluggable LN security](#pluggable-ln-security)
 - [Custom objects and handlers](#custom-objects-and-handlers)
 - [Transport and framing](#transport-and-framing) · [Logical Name client session](#logical-name-client-session)
 - [Blocks, limits, and local execution](#blocks-limits-and-local-execution) · [License](#license)
 
 ## Build and verification
 
-Building requires a stable .NET SDK 10.0.100 or later in the 10.0 line; SDK selection and the test runner are configured in [global.json](global.json). `EMCL.Transport` uses Microsoft's `System.IO.Ports` package for Serial; the other library projects have no external NuGet dependencies. Tests use xUnit v3 and Microsoft Testing Platform.
+Building requires a stable .NET SDK 10.0.100 or later in the 10.0 line. `EMCL.Transport` uses `System.IO.Ports` for Serial. `EMCL.Protocol` uses `BouncyCastle.Cryptography` for portable AES-GCM with a 96-bit tag and for CMAC. Tests use xUnit v3 and Microsoft Testing Platform. [SDK configuration](global.json)
 
 Run the following commands from the repository root. The local `--demo` demonstration does not require a meter connection:
 
@@ -416,7 +420,7 @@ Cancellation before sending preserves the association. Cancellation or a timeout
 
 Proposed conformance is checked against the implemented feature set. Services and selective access are enabled only after negotiation. Client and server maximum receive sizes are independent; a protocol value of zero means unlimited, but `ProtocolLimits` always apply. Nonzero sizes below 12 are reserved. Notification and GET block buffers are bounded; the first GET block must be numbered 1. `NotificationCapacity` must not exceed `MaxCollectionItems`, and a nonzero advertised receive size must not exceed `MaxMessageBytes`.
 
-`ReadNotificationsAsync` receives unciphered DataNotification messages independently of pending requests. Enumeration can start as soon as the channel is connected, including before calling `AssociateAsync`. If you associate first, the session buffers notifications received while waiting for AARE, including HDLC UI frames received during SNRM/UA setup. After the session accepts AARE, DataNotification requires negotiated support.
+`ReadNotificationsAsync` receives DataNotification messages independently of pending requests. After AARE, `DataNotification` requires negotiated support. Call `ConfirmNotificationAsync` for a confirmed notification after successfully processing it. Use `SpodesPushReceiver` and `SpodesPushChannel` for a channel dedicated to a pre-established Push association.
 
 If the meter sends notifications to a separate destination on the same connection, set `ApduFraming.Hdlc.NotificationAddress` or `ApduFraming.Wrapper.NotificationPort` to that destination.
 
@@ -432,7 +436,34 @@ Run the notification reader alongside any association operations you need. The a
 
 `LnAssociationOptions` supports no authentication, LLS, and HLS High (AES-128 challenge-response) through immutable `Password` bytes. HLS High invokes the Association LN method and validates the response before opening the session. Set `HlsInvokeIdAndPriority = 0xC1` for a meter that expects that octet on the HLS ACTION. For a meter that also requires the same octet on requests after association, set `ClientSessionOptions.FixedInvokeIdAndPriority = 0xC1` with `MaxConcurrentRequests = 1`. With the default session priority, both overrides can send a high-priority octet without `PriorityManagement` conformance.
 
-To implement another mechanism, provide `IClientAssociationNegotiator` and `IClientHighLevelAuthenticator`. To replace APDU representation, provide `IIncrementalCodec<DlmsApdu>`. To replace the entire client, implement `IDlmsClientSession`. Protected APDUs require a separate implementation.
+Opt in to `BlockTransferWithAction` or `GeneralBlockTransfer` through `LnAssociationOptions.Conformance`. An ACTION sent without a validated final response raises `DlmsActionUnconfirmedException`. The client handles service-specific ACTION blocks in both directions and can fall back to GBT for oversized SET and ACTION requests. GBT requires `MaxConcurrentRequests = 1`.
+
+## Pluggable LN security
+
+Set `LnAssociationOptions.Security` to an `ILnSecurityProtocol`. The client uses it for the ACSE application context, HLS and APDU protection. A custom implementation supplies the protected wire size, encodes and verifies each APDU, and authenticates the HLS challenge. Complete-APDU Push components accept the smaller `IApduProtection` interface for a pre-established association.
+
+```csharp
+using EMCL.Client.Association;
+using EMCL.Protocol.Security;
+
+ILnSecurityProtocol security = new DlmsSecurityProtocol(new()
+{
+    Suite = DlmsSecuritySuite.Kuznyechik,
+    LocalSystemTitle = clientTitle,
+    PeerSystemTitle = meterTitle,
+    GlobalKey = encryptionAndMacKeys,
+    Counters = counterStore
+});
+var association = new LnAssociationOptions { Security = security };
+```
+
+Use `DlmsSecuritySuite.AesGcm128` with a 16-byte `GlobalKey` and 16-byte `AuthenticationKey` for DLMS/COSEM suite 0. Kuznyechik uses a 64-byte key pair, with the encryption key first. The application loads keys and supplies an `IInvocationCounterStore`. Share the same durable counter store across sessions using the same titles and keys. `DlmsSecurityProtocol` also implements `ISecurityKeyTransfer` for wrapped key batches.
+
+## SPODES profiles
+
+Create an `EmclBuilder(CosemProfile.Spodes4)` or `EmclBuilder(CosemProfile.Spodes5)` per logical device. Use its importer and `Build` with the imported association. `Cosem` is the default. Explicit registrations take precedence, and imported versions without an exact definition retain their class/version and rights.
+
+Connect hardware and application-owned services through `EmclBuilder.Spodes`. Use `device.SpodesAutomation.TickAsync` to process timers and schedules and `ObserveAsync` to feed measurements to threshold monitors and limiters. The local demo selects SPODES 5, imports a Special Days Table and invokes its `insert` method. [Run the demo](examples/EMCL.Examples/README.md) · [Coverage by class](docs/COVERAGE.md#spodes-interface-classes)
 
 A complete runnable example with a local object pipeline is available in [ClientSessionExample.cs](examples/EMCL.Examples/Client/ClientSessionExample.cs). The example's test peer demonstrates the exchange and is not a ready-to-use server session.
 
@@ -470,7 +501,7 @@ var captured = await handler.CaptureAsync(
 
 The producer API executes locally without checking association permissions and uses the same object lock as the dispatcher. Obtain the handler before installing wrappers or retain a reference to your own instance. A runnable example of all three new classes is in [RegisterExamples.cs](examples/EMCL.Examples/Registers/RegisterExamples.cs).
 
-For meters that transmit time with the date-time tag (25), register Extended/Demand Register definitions using `DlmsType.DateTime`.
+The SPODES profiles select date-time tag 25 for Extended and Demand Register timestamps. `Cosem` uses octet strings for those timestamps.
 
 ## License
 

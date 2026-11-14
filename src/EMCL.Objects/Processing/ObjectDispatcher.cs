@@ -1,4 +1,5 @@
 using EMCL.Core.Access;
+using EMCL.Core.Objects;
 using EMCL.Core.Operations;
 using EMCL.Core.Pipeline;
 using EMCL.Core.Validation;
@@ -9,6 +10,8 @@ namespace EMCL.Objects.Processing;
 /// <summary>Composes operation middleware, access control, conversion, validation, and serialized object-handler execution.</summary>
 public sealed class ObjectDispatcher : IDlmsPipeline
 {
+    private readonly AsyncLocal<DispatchFrame?> active = new();
+    private readonly SemaphoreSlim? deviceGate;
     private readonly ObjectCatalog catalog;
     private readonly HandlerRegistry handlers;
     private readonly IValueValidator validator;
@@ -23,6 +26,20 @@ public sealed class ObjectDispatcher : IDlmsPipeline
     /// <param name="access">An optional access policy; null selects version-aware association permissions.</param>
     /// <param name="middleware">The middleware components in outermost-to-innermost order.</param>
     public ObjectDispatcher(ObjectCatalog catalog, HandlerRegistry handlers, IValueValidator? validator = null, IValueConverter? converter = null, IAccessPolicy? access = null, IEnumerable<IDlmsMiddleware>? middleware = null)
+        : this(catalog, handlers, validator, converter, access, middleware, false)
+    {
+    }
+
+    /// <summary>Creates a dispatcher with optional device-wide serialization for operations that invoke other objects.</summary>
+    /// <param name="catalog">The device catalog.</param>
+    /// <param name="handlers">The handler registry.</param>
+    /// <param name="validator">The optional value validator.</param>
+    /// <param name="converter">The optional incoming-value converter.</param>
+    /// <param name="access">The optional access policy.</param>
+    /// <param name="middleware">The middleware in registration order.</param>
+    /// <param name="serializeDevice">Whether to serialize top-level operations across this logical device.</param>
+    public ObjectDispatcher(ObjectCatalog catalog, HandlerRegistry handlers, IValueValidator? validator, IValueConverter? converter,
+        IAccessPolicy? access, IEnumerable<IDlmsMiddleware>? middleware, bool serializeDevice)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(handlers);
@@ -31,6 +48,7 @@ public sealed class ObjectDispatcher : IDlmsPipeline
         this.validator = validator ?? new DefaultValueValidator();
         this.converter = converter ?? new IdentityValueConverter();
         this.access = access ?? new AssociationAccessPolicy();
+        deviceGate = serializeDevice ? new(1, 1) : null;
         OperationDelegate next = DispatchAsync;
         foreach (var component in (middleware ?? []).Reverse())
         {
@@ -42,7 +60,23 @@ public sealed class ObjectDispatcher : IDlmsPipeline
     }
 
     /// <inheritdoc />
-    public ValueTask<OperationResult> ExecuteAsync(CosemOperation operation, OperationContext context, CancellationToken cancellationToken = default) => pipeline(operation, context, cancellationToken);
+    public ValueTask<OperationResult> ExecuteAsync(CosemOperation operation, OperationContext context, CancellationToken cancellationToken = default)
+        => deviceGate is null || active.Value is not null
+            ? pipeline(operation, context, cancellationToken)
+            : ExecuteExclusiveAsync(operation, context, cancellationToken);
+
+    private async ValueTask<OperationResult> ExecuteExclusiveAsync(CosemOperation operation, OperationContext context, CancellationToken ct)
+    {
+        await deviceGate!.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await pipeline(operation, context, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            deviceGate.Release();
+        }
+    }
     private async ValueTask<OperationResult> DispatchAsync(CosemOperation op, OperationContext ctx, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -88,17 +122,38 @@ public sealed class ObjectDispatcher : IDlmsPipeline
             return new(CosemResultCode.TypeUnmatched, Diagnostic: e.Message);
         }
 
+        var parent = active.Value;
+        for (var frame = parent; frame is not null; frame = frame.Parent)
+        {
+            if (frame.Name == obj.LogicalName)
+            {
+                return new(CosemResultCode.ScopeOfAccessViolated, Diagnostic: "Recursive object operation.");
+            }
+        }
+
         var handler = handlers.Resolve(catalog.LogicalDeviceId, obj);
         await obj.OperationLock.WaitAsync(ct).ConfigureAwait(false);
+        active.Value = new(obj.LogicalName, parent);
         try
         {
-            return op.Kind switch
+            var result = op.Kind switch
             {
                 CosemOperationKind.Read => await handler.ReadAsync(obj, op, ctx, ct).ConfigureAwait(false),
                 CosemOperationKind.Write => await handler.WriteAsync(obj, op, ctx, ct).ConfigureAwait(false),
                 CosemOperationKind.Invoke => await handler.InvokeAsync(obj, op, ctx, ct).ConfigureAwait(false),
-                _ => new(CosemResultCode.OtherReason)
+                _ => new OperationResult(CosemResultCode.OtherReason)
             };
+            if (op.Kind == CosemOperationKind.Invoke && result.Error == CosemResultCode.Success
+                && obj.Descriptor.Methods.FirstOrDefault(method => method.Index == op.Index) is { } definition
+                && (definition.ResultType is not null || definition.ResultConstraint is not null)
+                && (result.Value is not { } returned
+                    || definition.ResultType is not null && definition.ResultType != returned.Type
+                    || definition.ResultConstraint?.Invoke(returned) is not null))
+            {
+                return new(CosemResultCode.TypeUnmatched, Diagnostic: "Invalid method return value.");
+            }
+
+            return result;
         }
         catch (Exception e) when (e is ArgumentException or FormatException or InvalidOperationException or OverflowException)
         {
@@ -106,7 +161,10 @@ public sealed class ObjectDispatcher : IDlmsPipeline
         }
         finally
         {
+            active.Value = parent;
             obj.OperationLock.Release();
         }
     }
+
+    private sealed record DispatchFrame(LogicalName Name, DispatchFrame? Parent);
 }
