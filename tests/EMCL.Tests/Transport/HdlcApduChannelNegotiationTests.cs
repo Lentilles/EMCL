@@ -7,6 +7,26 @@ namespace EMCL.Tests.Transport;
 
 public sealed partial class HdlcApduChannelTests
 {
+    [Fact]
+    public async Task ReceivesFullSizedResponseFollowingRepeatedIdleFlags()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var local = HdlcAddress.Client(48);
+        var remote = HdlcAddress.Server(1, 17, extended: true);
+        var proposal = new HdlcLinkParameters(2030, 2030);
+        var codec = new HdlcCodec();
+        byte[] response = Enumerable.Repeat((byte)0x7E, 2027).ToArray();
+        byte[] ua = codec.EncodeBytes(new(local, remote, HdlcControl.Ua, HdlcNegotiation.CreateSnrmInformation(proposal)));
+        byte[] reply = codec.EncodeBytes(new(local, remote, 0x30, [0xE6, 0xE7, 0, .. response]));
+        var transport = new ChunkTransport([.. ua, .. Enumerable.Repeat((byte)0x7E, 32), .. reply], chunk: 2049);
+
+        await using var channel = await HdlcApduChannel.ConnectAsync(transport,
+            new ApduFraming.Hdlc(local, remote, TimeSpan.FromSeconds(1)) { LinkParameters = proposal },
+            cancellationToken: token);
+        await channel.SendAsync(new byte[] { 1 }, token);
+        Assert.Equal(response, (await channel.ReceiveAsync(token))!.Value.ToArray());
+    }
+
     [Theory]
     [InlineData(571, 1024, 256, 512, 512, 256)]
     [InlineData(1024, 256, 571, 1024, 1024, 256)]

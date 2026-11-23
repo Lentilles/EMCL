@@ -55,7 +55,7 @@ public abstract record ApduFraming
             get; init;
         }
 
-        /// <summary>Maximum recovery attempts per unacknowledged I-frame or stalled receive window.
+        /// <summary>Maximum recovery attempts per unacknowledged I-frame, stalled receive turn, or delayed AARE.
         /// Zero disables timed recovery.</summary>
         public int InformationFrameRetryCount
         {
@@ -63,7 +63,7 @@ public abstract record ApduFraming
         }
 
         /// <summary>Time to wait for acknowledgement before polling the peer or reporting exhausted recovery.
-        /// For a negotiated RX window above one, also bounds silence while receiving a response burst or waiting for its continuation.
+        /// Also bounds silence within an HDLC response, after a continuation poll, or after AARQ is acknowledged without AARE.
         /// Recovery remains opt-in through <see cref="InformationFrameRetryCount"/>.</summary>
         public TimeSpan AcknowledgementTimeout { get; init; } = TimeSpan.FromSeconds(1);
 

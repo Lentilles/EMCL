@@ -303,7 +303,7 @@ var framing = new ApduFraming.Hdlc(
 `LinkParameters = null` is the default: SNRM has no information field and local size ceilings are 128 bytes.
 Explicit sizes must be 3–2030 bytes, including the LLC header (3 bytes per complete APDU).
 Local TX is the smaller of proposed TX and UA RX; local RX is the smaller of proposed RX and UA TX.
-An empty UA or an omitted parameter uses the protocol default (128 bytes, one frame), even when larger sizes were proposed.
+An empty UA or a parameter that is omitted or set to zero uses the protocol default (128 bytes, one frame), even when larger sizes were proposed.
 `Received` is null for an empty UA; its nullable properties preserve omitted individual parameters without displaying
 defaults as peer-reported values. `UaInformation` preserves the exact bytes.
 `HdlcApduChannel.Negotiation` exposes the latest snapshot; the observer also works through
@@ -311,16 +311,17 @@ defaults as peer-reported values. `UaInformation` preserves the exact bytes.
 The replacement cannot reduce TX below the size of a frame already sent. Incoming I/UI frames exceeding effective RX fail the link.
 `TransmitWindowFrames` must remain one; `ReceiveWindowFrames` accepts 1–7 and defaults to one.
 UA TX selects the local RX window; UA RX selects the local TX window. A UA window above its matching local proposal is rejected.
-With RX > 1, the peer may send a burst of frames: the client acknowledges a continued segmented response with RR
-when the peer sets Final, including bursts shorter than the window. Replayed frames are suppressed using a bounded history;
+The client requests continuation of a segmented response with RR when the peer sets Final, including turns shorter than
+the receive window. With RX > 1, the peer may send a burst of frames. Replayed frames are suppressed using a bounded history;
 a sequence gap preserves the accepted prefix and requests the missing sequence after Final. Exceeding the negotiated
 number of outstanding received frames faults the link. Complete APDUs received before Final are buffered until the turn ends.
 UI notifications remain independent and may be delivered between numbered segments.
 
 Window sizes count frames; `AcknowledgementTimeout` separately controls the recovery timer.
-For RX > 1 and `InformationFrameRetryCount > 0`, every error-free non-final response frame restarts the receive timer.
+With `InformationFrameRetryCount > 0`, error-free non-final response frames restart the receive timer.
 Silence during a burst or after its continuation poll triggers another RR with the next expected sequence, without replaying
-the application request. Accepted new data resets the receive retry budget; exhausted recovery faults the link.
+the application request. The client also polls if the meter acknowledges AARQ with RR and has yet to send AARE.
+Accepted new data resets the receive retry budget; exhausted recovery faults the link.
 With retries disabled, a lost Final or continuation poll requires the application's receive deadline to terminate the wait.
 Keep a receive loop active while a concurrent `SendAsync` waits for the preceding frame's acknowledgement or the peer's Final;
 `DlmsClientSession` already does this. Canceling or failing a windowed receive requires a new connection and releases waiting senders.

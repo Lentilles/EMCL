@@ -17,10 +17,11 @@ public sealed partial class HdlcApduChannel
     private PendingInformation? pendingInformation;
     private TaskCompletionSource pendingChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private sealed class PendingInformation(HdlcFrame frame, CancellationToken cancellationToken)
+    private sealed class PendingInformation(HdlcFrame frame, CancellationToken cancellationToken, bool awaitAssociationResponse)
     {
         public HdlcFrame Frame { get; } = frame;
         public CancellationToken CancellationToken { get; } = cancellationToken;
+        public bool AwaitAssociationResponse { get; } = awaitAssociationResponse;
         public long LastTransmission { get; set; } = Stopwatch.GetTimestamp();
         public int Attempts
         {
@@ -61,11 +62,21 @@ public sealed partial class HdlcApduChannel
 
     private void AcknowledgePendingFrame()
     {
-        if (pendingInformation is not null)
+        if (pendingInformation is not { } pending)
         {
-            pendingInformation = null;
-            SignalPendingChanged();
+            return;
         }
+
+        pendingInformation = null;
+        if (pending.AwaitAssociationResponse)
+        {
+            // RR can acknowledge the request before the meter has an AARE to send.
+            awaitingAssociationResponse = true;
+            WaitForReceiveFinal(progress: false);
+            return;
+        }
+
+        SignalPendingChanged();
     }
 
     private async Task RunRecoveryAsync()
@@ -198,7 +209,7 @@ public sealed partial class HdlcApduChannel
         await WriteFrameCoreAsync(new(remote, local, HdlcControl.CreateReceiveReady(nextReceiveSequence), []), cancellationToken)
             .ConfigureAwait(false);
         receiveFramesSinceAcknowledgement = 0;
-        if (Negotiation.Effective.ReceiveWindowFrames > 1 && (adapter!.HasPending || receiveSequenceError || awaitingReceiveFinal))
+        if (awaitingReceiveFinal)
         {
             WaitForReceiveFinal(progress: false);
         }

@@ -11,6 +11,7 @@ public sealed partial class HdlcApduChannel
     private int receiveFramesSinceAcknowledgement;
     private bool receiveSequenceError;
     private bool awaitingReceiveFinal;
+    private bool awaitingAssociationResponse;
     private CancellationToken receiveExchangeToken;
     private ReceiveResponseWait? receiveResponseWait;
 
@@ -24,15 +25,31 @@ public sealed partial class HdlcApduChannel
         }
     }
 
-    private async ValueTask<ReadOnlyMemory<byte>?> AcceptWindowedInformationFrameAsync(HdlcApduAdapter dataAdapter,
+    private async ValueTask<ReadOnlyMemory<byte>?> AcceptInformationFrameAsync(HdlcApduAdapter dataAdapter,
         HdlcFrame frame, CancellationToken cancellationToken)
     {
+        int window = Negotiation.Effective.ReceiveWindowFrames;
         bool final = (frame.Control & HdlcFrameFormat.PollFinalMask) != 0;
         bool duplicate = frame.SendSequence != nextReceiveSequence && recentReceiveFrames.Any(previous =>
             frame.SendSequence == previous.SendSequence && frame.Segmented == previous.Segmented
             && frame.Information.AsSpan().SequenceEqual(previous.Information.AsSpan()));
         if (duplicate || receiveSequenceError || frame.SendSequence != nextReceiveSequence)
         {
+            if (window == 1)
+            {
+                if (!duplicate)
+                {
+                    throw new InvalidDataException("Unexpected HDLC I-frame sequence.");
+                }
+
+                if (frame.Segmented && final)
+                {
+                    await WriteReceiveReadyAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                return null;
+            }
+
             if (!duplicate)
             {
                 receiveSequenceError = true;
@@ -53,10 +70,15 @@ public sealed partial class HdlcApduChannel
         bool acknowledges = frame.ReceiveSequence == nextSendSequence;
         if (!acknowledges && pendingInformation?.Frame.SendSequence != frame.ReceiveSequence)
         {
+            if (window == 1)
+            {
+                throw new InvalidDataException("Unexpected HDLC I-frame acknowledgement.");
+            }
+
             FailLink("Unexpected HDLC I-frame acknowledgement in a receive window");
         }
 
-        if (receiveFramesSinceAcknowledgement >= Negotiation.Effective.ReceiveWindowFrames)
+        if (receiveFramesSinceAcknowledgement >= window)
         {
             FailLink("The peer exceeded the negotiated HDLC receive window in frames");
         }
@@ -68,7 +90,7 @@ public sealed partial class HdlcApduChannel
 
         receiveFramesSinceAcknowledgement++;
         recentReceiveFrames.Enqueue(frame);
-        while (recentReceiveFrames.Count > Negotiation.Effective.ReceiveWindowFrames)
+        while (recentReceiveFrames.Count > window)
         {
             recentReceiveFrames.Dequeue();
         }
@@ -76,18 +98,20 @@ public sealed partial class HdlcApduChannel
         nextReceiveSequence = (byte)((nextReceiveSequence + 1) & HdlcFrameFormat.SequenceMask);
         if (dataAdapter.Accept(frame with { Source = remote }) is { } apdu)
         {
+            awaitingAssociationResponse = false;
             completedWindowApdus.Enqueue(apdu);
         }
 
-        WaitForReceiveFinal(progress: true);
         if (!final)
         {
+            WaitForReceiveFinal(progress: true);
             return null;
         }
 
         if (frame.Segmented)
         {
             // A peer may finish its turn before filling the negotiated window.
+            WaitForReceiveFinal(progress: true);
             await WriteReceiveReadyAsync(cancellationToken).ConfigureAwait(false);
             return null;
         }
@@ -116,6 +140,11 @@ public sealed partial class HdlcApduChannel
 
     private void CompleteReceiveTurn()
     {
+        if (!awaitingReceiveFinal)
+        {
+            return;
+        }
+
         awaitingReceiveFinal = false;
         receiveResponseWait = null;
         SignalPendingChanged();
@@ -123,7 +152,7 @@ public sealed partial class HdlcApduChannel
 
     private void ObserveReceiveFinal(HdlcFrame frame)
     {
-        if (Negotiation.Effective.ReceiveWindowFrames <= 1)
+        if (Negotiation.Effective.ReceiveWindowFrames == 1 && !awaitingReceiveFinal)
         {
             return;
         }
@@ -132,16 +161,10 @@ public sealed partial class HdlcApduChannel
         {
             WaitForReceiveFinal(progress: false);
         }
-        else if (adapter!.HasPending || receiveSequenceError)
+        else if (adapter!.HasPending || receiveSequenceError || awaitingAssociationResponse)
         {
-            // RR/F can end a turn without completing the segmented response. Retry only after the timer.
-            awaitingReceiveFinal = true;
-            if (receiveResponseWait is not null)
-            {
-                receiveResponseWait.LastActivity = Stopwatch.GetTimestamp();
-            }
-
-            SignalPendingChanged();
+            // A final frame can return the turn without completing the application response.
+            WaitForReceiveFinal(progress: false);
         }
         else
         {
@@ -149,13 +172,8 @@ public sealed partial class HdlcApduChannel
         }
     }
 
-    private async Task ObserveWindowedUiFrameAsync(HdlcFrame frame, CancellationToken cancellationToken)
+    private async Task ObserveUiFrameAsync(HdlcFrame frame, CancellationToken cancellationToken)
     {
-        if (Negotiation.Effective.ReceiveWindowFrames <= 1)
-        {
-            return;
-        }
-
         await writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -180,10 +198,10 @@ public sealed partial class HdlcApduChannel
         }
     }
 
-    private async Task ObserveWindowedSupervisoryFrameAsync(HdlcFrame frame, CancellationToken cancellationToken)
+    private async Task ObserveSupervisoryFinalAsync(HdlcFrame frame, CancellationToken cancellationToken)
     {
-        if (Negotiation.Effective.ReceiveWindowFrames > 1 && receiveSequenceError && pendingInformation is null
-            && (frame.Control & HdlcFrameFormat.PollFinalMask) != 0)
+        if (pendingInformation is null && (frame.Control & HdlcFrameFormat.PollFinalMask) != 0
+            && (receiveSequenceError || adapter!.HasPending && receiveFramesSinceAcknowledgement > 0))
         {
             receiveSequenceError = false;
             await WriteReceiveReadyAsync(cancellationToken).ConfigureAwait(false);

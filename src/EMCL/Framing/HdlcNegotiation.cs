@@ -103,6 +103,12 @@ public static class HdlcNegotiation
         {
             var (identifier, length, value) = ReadParameter(data, ref offset, seen);
             ValidateParameter(identifier, length, value);
+            if (value == 0)
+            {
+                // An explicit zero selects the same default as an omitted parameter.
+                continue;
+            }
+
             parameters = identifier switch
             {
                 MaximumTransmitInformation => parameters with { MaximumTransmitInformationBytes = (int)value },
@@ -155,8 +161,8 @@ public static class HdlcNegotiation
         bool supported = identifier switch
         {
             MaximumTransmitInformation or MaximumReceiveInformation => length is 1 or 2
-                && value is > 0 and <= MaximumInformationBytes,
-            TransmitWindow or ReceiveWindow => length == sizeof(uint) && value is > 0 and <= MaximumWindow,
+                && value <= MaximumInformationBytes,
+            TransmitWindow or ReceiveWindow => length == sizeof(uint) && value <= MaximumWindow,
             _ => false
         };
         if (!supported)

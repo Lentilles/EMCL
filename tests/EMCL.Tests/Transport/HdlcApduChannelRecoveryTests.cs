@@ -14,6 +14,102 @@ namespace EMCL.Tests.Transport;
 
 public sealed partial class HdlcApduChannelTests
 {
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(3, false)]
+    [InlineData(3, true)]
+    public async Task PollsForSegmentedAareAfterAarqIsAcknowledged(int window, bool delayedAcknowledgement)
+    {
+        var token = TestContext.Current.CancellationToken;
+        const string ua = "7EA00861022373CD557E";
+        const string acknowledgeAarq = "7EA00861022331DB347E";
+        const string firstSegment = "7EA82361022320F633E6E7006129A109060760857405080101A203020100A305A103288F7E";
+        const string lastSegment = "7EA01F61022332DC82020100BE10040E0800065F1F040000501F01F40007FB9E7E";
+        const string aarq = "7EA02C02236110C9D9E6E600601DA109060760857405080101BE10040E01000000065F1F0400007E1F04B0CAEA7E";
+        const string pollForAare = "7EA00802236111C1857E";
+        const string pollForContinuation = "7EA00802236131C3A47E";
+        const string disc = "7EA00802236153D7E47E";
+        var exchange = new ConcurrentQueue<(byte Control, bool Received)>();
+        var events = new ConcurrentQueue<HdlcLinkEvent>();
+
+        await RunLoopbackAsync(async (stream, codec, local, remote) =>
+        {
+            if (window == 1)
+            {
+                await stream.WriteAsync(FromHex(ua), token);
+            }
+            else
+            {
+                await WriteFrameAsync(stream, codec, new(local, remote, HdlcControl.Ua, ReceiveWindowUa(window)));
+            }
+
+            // The AARQ/AARE payloads are from Green Book Ed. 11, Clause 11. The frames use independent CRC vectors.
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+            deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            async Task ExpectAsync(string hex)
+            {
+                byte[] actual = new byte[hex.Length / 2];
+                await stream.ReadExactlyAsync(actual, deadline.Token);
+                AssertBytesEqual(FromHex(hex), actual);
+            }
+
+            await ExpectAsync(aarq);
+            if (delayedAcknowledgement)
+            {
+                await ExpectAsync(pollForAare);
+            }
+
+            await stream.WriteAsync(FromHex(acknowledgeAarq), token);
+            await ExpectAsync(pollForAare);
+            // The first segment has F=0. The following RR/F shares its flag and ends the meter's turn.
+            await stream.WriteAsync(FromHex(firstSegment + acknowledgeAarq[2..]), token);
+            await ExpectAsync(pollForContinuation);
+            // The meter only receives the second continuation poll.
+            await ExpectAsync(pollForContinuation);
+            byte[] last = FromHex(lastSegment);
+            await stream.WriteAsync(last.AsMemory(0, 7), token);
+            await stream.WriteAsync(last.AsMemory(7), token);
+            await ExpectAsync(disc);
+        }, async channel =>
+        {
+            await using var client = new DlmsClientSession(channel, new ClientSessionOptions
+            {
+                Association = new()
+                {
+                    Conformance = DlmsConformance.Get,
+                    AdvertisedConformance = (DlmsConformance)0x007E1F,
+                    MaxReceivePduSize = 1200
+                },
+                RequestTimeout = TimeSpan.FromSeconds(4),
+                LeaveOpen = true
+            });
+            var association = await client.AssociateAsync(token);
+            Assert.Equal(DlmsConformance.Get, association.Conformance);
+            Assert.Equal(500, association.ServerMaxReceivePduSize);
+        }, observer: (frame, received) => exchange.Enqueue((frame.Control, received)),
+            acknowledgementTimeout: TimeSpan.FromMilliseconds(300), linkObserver: events.Enqueue,
+            linkParameters: new(ReceiveWindowFrames: window));
+
+        List<(byte Control, bool Received)> expectedFrames =
+        [
+            (0x93, false), (0x73, true), (0x10, false), (0x31, true), (0x11, false),
+            (0x20, true), (0x31, true), (0x31, false), (0x31, false), (0x32, true), (0x53, false)
+        ];
+        List<HdlcLinkEvent> expectedEvents =
+        [
+            new HdlcLinkEvent.ReceiveRecoveryPoll(0, 1), new HdlcLinkEvent.ReceiveRecoveryPoll(1, 1)
+        ];
+        if (delayedAcknowledgement)
+        {
+            expectedFrames.Insert(3, (0x11, false));
+            expectedEvents.Insert(0, new HdlcLinkEvent.RecoveryPoll(0, 1));
+        }
+
+        Assert.Equal(expectedFrames, exchange.ToArray());
+        Assert.Equal(expectedEvents, events.ToArray());
+    }
+
     [Fact]
     public async Task ReplaysLostAarqOnlyAfterRecoveryPollConfirmsItWasLost()
     {

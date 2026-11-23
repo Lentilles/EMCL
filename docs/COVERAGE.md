@@ -43,7 +43,7 @@
 | Deadlines and cancellation | Cover the entire exchange; cancellation after a send attempt faults the association, while queue waiting is canceled separately |
 | HDLC size negotiation | Optional SNRM MAX INFO TX/RX proposals (3–2030 bytes including LLC); asymmetric UA limits, separate proposed/received/effective snapshots, incoming I/UI size enforcement; TX window fixed at one frame |
 | HDLC receive windows | Negotiated RX windows 1–7, Final-driven RR acknowledgements, partial bursts, modulo-eight wrap, bounded duplicate suppression and poll/final sequence-gap recovery; TX remains one frame |
-| HDLC recovery | Optional RR polling and I-frame replay after an acknowledgement timeout; receive-window silence/continuation recovery, checksum recovery and duplicate suppression |
+| HDLC recovery | Optional RR polling and I-frame replay after an acknowledgement timeout, polling for AARE after the meter acknowledges AARQ, receive-turn and continuation recovery, checksum recovery, and duplicate suppression |
 | Ready-to-use server session, full HDLC link management | Future work |
 | ACTION block transfer | Request and response pblocks with negotiated support, protected PDU limits and unconfirmed outcome reporting |
 | GBT | Bounded receive and stop-and-wait transmission; supported for Push and oversized client SET/ACTION |

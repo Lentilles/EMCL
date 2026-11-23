@@ -41,7 +41,6 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
     private HdlcApduAdapter? adapter;
     private HdlcFrame? setupUa;
     private HdlcFrame? firstDataFrame;
-    private HdlcFrame? lastReceivedInformation;
     private bool associationRetryUsed;
     private string? linkFailure;
     private bool awaitingFirstDataResponse = true;
@@ -172,12 +171,12 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
             }
             throw;
         }
-        catch (Exception) when (Negotiation.Effective.ReceiveWindowFrames > 1)
+        catch (Exception) when (Negotiation.Effective.ReceiveWindowFrames > 1 || awaitingReceiveFinal)
         {
             await writeLock.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try
             {
-                linkFailure ??= "stage=HDLC receive; the windowed receive failed. Establish a new HDLC connection.";
+                linkFailure ??= "stage=HDLC receive; the receive turn failed. Establish a new HDLC connection.";
                 SignalPendingChanged();
             }
             finally
@@ -212,7 +211,7 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
 
             if (frame.IsUnnumberedInformation)
             {
-                await ObserveWindowedUiFrameAsync(frame, cancellationToken).ConfigureAwait(false);
+                await ObserveUiFrameAsync(frame, cancellationToken).ConfigureAwait(false);
                 // UI traffic is independent of the numbered exchange, including AARQ retry state.
                 return dataAdapter.Accept(frame with
                 {
@@ -274,55 +273,15 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
         FailLink($"Unexpected HDLC UA {state}");
     }
 
-    private async ValueTask<ReadOnlyMemory<byte>?> AcceptInformationFrameAsync(HdlcApduAdapter dataAdapter,
-        HdlcFrame frame, CancellationToken cancellationToken)
-    {
-        if (Negotiation.Effective.ReceiveWindowFrames > 1)
-        {
-            return await AcceptWindowedInformationFrameAsync(dataAdapter, frame, cancellationToken).ConfigureAwait(false);
-        }
-
-        if (lastReceivedInformation is { } previous && frame.SendSequence == previous.SendSequence
-            && frame.Segmented == previous.Segmented && frame.Information.AsSpan().SequenceEqual(previous.Information.AsSpan()))
-        {
-            if (frame.Segmented)
-            {
-                await WriteReceiveReadyAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            return null;
-        }
-
-        bool acknowledges = frame.ReceiveSequence == nextSendSequence;
-        if (frame.SendSequence != nextReceiveSequence
-            || !acknowledges && pendingInformation?.Frame.SendSequence != frame.ReceiveSequence)
-        {
-            throw new InvalidDataException("Unexpected HDLC I-frame sequence or acknowledgement.");
-        }
-
-        if (acknowledges)
-        {
-            AcknowledgePendingFrame();
-        }
-
-        lastReceivedInformation = frame;
-        nextReceiveSequence = (byte)((nextReceiveSequence + 1) & HdlcFrameFormat.SequenceMask);
-        var apdu = dataAdapter.Accept(frame with
-        {
-            Source = remote
-        });
-        if (frame.Segmented)
-        {
-            await WriteReceiveReadyAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        return apdu;
-    }
-
     private async ValueTask AcceptSupervisoryFrameAsync(HdlcFrame frame, CancellationToken cancellationToken)
     {
+        if (frame.Segmented || !frame.Information.IsEmpty)
+        {
+            throw new InvalidDataException("An HDLC supervisory frame cannot carry information or segments.");
+        }
+
         await AcceptSupervisoryFrameCoreAsync(frame, cancellationToken).ConfigureAwait(false);
-        await ObserveWindowedSupervisoryFrameAsync(frame, cancellationToken).ConfigureAwait(false);
+        await ObserveSupervisoryFinalAsync(frame, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask AcceptSupervisoryFrameCoreAsync(HdlcFrame frame, CancellationToken cancellationToken)
@@ -433,16 +392,17 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
             maximumSetupInformationSent = Math.Max(maximumSetupInformationSent, frame.Information.Length);
         }
 
+        bool initialAssociationRequest = nextSendSequence == 1 && awaitingFirstDataResponse
+            && !apdu.IsEmpty && apdu.Span[0] == (byte)AcseKind.Aarq;
         if (recoveryLifetime is not null || Negotiation.Effective.ReceiveWindowFrames > 1)
         {
-            pendingInformation = new(frame, cancellationToken);
+            pendingInformation = new(frame, cancellationToken, recoveryLifetime is not null && initialAssociationRequest);
             SignalPendingChanged();
         }
 
-        if (recoveryLifetime is null && nextSendSequence == 1 && awaitingFirstDataResponse && firstDataFrame is null
-            && !apdu.IsEmpty && apdu.Span[0] == (byte)AcseKind.Aarq)
+        if (recoveryLifetime is null && initialAssociationRequest)
         {
-            firstDataFrame = frame;
+            firstDataFrame ??= frame;
         }
     }
 
@@ -608,15 +568,20 @@ public sealed partial class HdlcApduChannel : IApduChannel, IAssociationRequestR
     {
         while (true)
         {
+            if (inputCount > 1 && input[0] == HdlcFrameFormat.Flag)
+            {
+                int firstData = input.AsSpan(0, inputCount).IndexOfAnyExcept(HdlcFrameFormat.Flag);
+                int excessFlags = (firstData < 0 ? inputCount : firstData) - 1;
+                if (excessFlags > 0)
+                {
+                    // Retain one opening flag without spending frame-buffer space on line idle.
+                    DiscardInput(excessFlags);
+                }
+            }
+
             if (TryDecodeBufferedFrame() is { } frame)
             {
                 return frame;
-            }
-
-            if (inputCount > 1 && input.AsSpan(0, inputCount).IndexOfAnyExcept(HdlcFrameFormat.Flag) < 0)
-            {
-                // Keep the opening flag when the buffer contains only repeated flags.
-                inputCount = 1;
             }
 
             if (inputCount == input.Length)

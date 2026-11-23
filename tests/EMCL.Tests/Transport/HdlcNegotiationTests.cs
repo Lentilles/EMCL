@@ -21,7 +21,6 @@ public sealed class HdlcNegotiationTests
     }
 
     [Theory]
-    [InlineData("818003060100")]
     [InlineData("8180040601020601")]
     [InlineData("8180070605FFFFFFFFFF")]
     [InlineData("81800409020001")]
@@ -76,6 +75,18 @@ public sealed class HdlcNegotiationTests
             [.. Convert.FromHexString("818003060140")]);
         Assert.Equal(new(null, 64, null, null), result.Received);
         Assert.Equal(new(64, 128, 1, 1), result.Effective);
+    }
+
+    [Fact]
+    public void ZeroUaParametersSelectTheProtocolDefaults()
+    {
+        var information = Convert.FromHexString("81801305010006020000070400000000080400000000").ToImmutableArray();
+        var result = HdlcNegotiation.Negotiate(new(1024, 1024, ReceiveWindowFrames: 7), information);
+
+        Assert.Equal(new HdlcUaParameters(), result.Received);
+        Assert.Equal(new HdlcLinkParameters(), result.Effective);
+        Assert.Equal(information, result.UaInformation);
+        Assert.Equal(128, HdlcNegotiation.MaximumOutgoingInformation(information));
     }
 
     [Theory]
